@@ -11,6 +11,7 @@ from binaryninja import load, SymbolType, user_directory
 from binaryninja.log import log as bnlog
 from binaryninja.log import LogLevel
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtCore import QResource
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
@@ -27,28 +28,18 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.biggest_binary = {"path": "", "size": 0, "format": "", "arch": ""}
         self.splash = splash  # Store the splash screen reference
         self.splash_start_time = datetime.datetime.now()  # Track when the splash was shown
-        self.cache_path = os.path.join(user_directory(), "wrapped_cache.json")
-        self.timestamp = 0  # When the data was last updated
         self.user_name = self.get_user_name()  # Get the user's name
         self.current_tab_index = 0  # Track the current tab for custom quotes
         
         # Initialize UI with placeholder content
         self.initUI(True)
         
-        # Try to load cached data first
-        cache_loaded = self.load_cached_data()
+        # Bind ESC key to close the dialog for easier interaction
+        self.escapeShortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self)
+        self.escapeShortcut.activated.connect(self.close)
         
-        # Check if cache is older than a week
-        cache_age = (datetime.datetime.now() - 
-                    datetime.datetime.fromtimestamp(self.timestamp)).total_seconds()
-        cache_too_old = cache_age > 604800  # 7 days in seconds
-        
-        if cache_loaded and not cache_too_old:
-            # Update UI with loaded data, but ensure splash is shown for at least 3 seconds
-            QtCore.QTimer.singleShot(100, self.updateUI)
-        else:
-            # Start stats computation in a small delay to allow UI to render first
-            QtCore.QTimer.singleShot(100, self.showProgressDialog)
+        # Start stats computation in a small delay to allow UI to render first
+        QtCore.QTimer.singleShot(100, self.showProgressDialog)
             
     def get_user_name(self):
         """Get the user's name in a cross-platform way"""
@@ -217,71 +208,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         dialog.close()
         self.updateUI()
     
-    def load_cached_data(self):
-        """Load stats from cached JSON file"""
-        try:
-            if os.path.exists(self.cache_path):
-                with open(self.cache_path, 'r') as f:
-                    data = json.load(f)
-                
-                # Store the timestamp
-                self.timestamp = data.get('timestamp', 0)
-                
-                # Load cached data
-                self.count = data.get('count', 0)
-                self.file_formats = data.get('file_formats', {})
-                self.cpu_archs = data.get('cpu_archs', {})
-                self.binary_stats = data.get('binary_stats', {'avg': 0, 'min': 0, 'max': 0})
-                self.static_binaries_count = data.get('static_binaries_count', {'static': 0, 'dynamic': 0})
-                self.biggest_binary = data.get('biggest_binary', {"path": "", "size": 0, "format": "", "arch": ""})
-                
-                # Close splash screen if it exists, but ensure it's been shown for at least 3 seconds
-                if hasattr(self, 'splash') and self.splash:
-                    elapsed_time = (datetime.datetime.now() - self.splash_start_time).total_seconds()
-                    if elapsed_time < 3.0:
-                        # Wait until 3 seconds have passed
-                        remaining_time = int((3.0 - elapsed_time) * 1000)
-                        QtCore.QTimer.singleShot(remaining_time, self.closeSplash)
-                    else:
-                        # Already been 3 seconds, close it now
-                        self.closeSplash()
-                
-                return True
-        except Exception as e:
-            bnlog(LogLevel.ErrorLog, f"Error loading cache: {str(e)}")
-        return False
-    
-    def save_cached_data(self):
-        """Save stats to a cached JSON file"""
-        try:
-            # Create .binaryninja dir if it doesn't exist
-            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-            
-            # Update timestamp
-            self.timestamp = datetime.datetime.now().timestamp()
-            
-            data = {
-                'timestamp': self.timestamp,
-                'count': self.count,
-                'file_formats': self.file_formats,
-                'cpu_archs': self.cpu_archs,
-                'binary_stats': self.binary_stats,
-                'static_binaries_count': self.static_binaries_count,
-                'biggest_binary': self.biggest_binary
-            }
-            
-            with open(self.cache_path, 'w') as f:
-                json.dump(data, f)
-                
-        except Exception as e:
-            bnlog(LogLevel.ErrorLog, f"Error saving cache: {str(e)}")
-    
-    def refresh_stats(self):
-        """Force a refresh of the statistics"""
-        self.initUI(True)
-            
-        # Start new computation
-        QtCore.QTimer.singleShot(100, self.showProgressDialog)
+    # Caching functionality removed
     
     def computeStats(self, progress_dialog=None):
         """Compute statistics with optional progress dialog"""
@@ -347,9 +274,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.static_binaries_count = {'static': 8, 'dynamic': 10}
             self.biggest_binary = {"path": "example.exe", "size": 2048, "format": "PE", "arch": "x86"}
         
-        # Save the data to cache
-        self.save_cached_data()
-        
         # Final progress update
         if progress_dialog:
             progress_dialog.setValue(len(self.recent_files))  
@@ -385,10 +309,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.tabs.addTab(self.cpuArchTab, "CPU Arch")
         self.tabs.addTab(self.binaryStatsTab, "Statistics")
         self.tabs.addTab(self.staticBinariesTab, "Static Binaries")
-
-        # Initialize the quote label first, so it's always available
-        self.quoteLabel = QtWidgets.QLabel(self)
-        layout.addWidget(self.quoteLabel)
         
         # Add overlay for placeholder mode
         if use_placeholder:
@@ -408,15 +328,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.overlay.show()
             self.overlay.raise_()  # Ensure overlay stays on top
             
-            # Resize event handler to keep overlay properly sized
-            self.resizeEvent = self.handleResize
-
-        # Initialize the quote with the first tab's content
-        try:
-            self.updateQuoteForCurrentTab(0)  # Initialize with first tab
-        except Exception as e:
-            # If there's an error, set a default quote
-            self.quoteLabel.setText("Quote: Welcome to Binary Ninja Wrapped!")
+            # The resizeEvent method will handle keeping the overlay properly sized
         
         # Add button container at the bottom
         buttonLayout = QtWidgets.QHBoxLayout()
@@ -435,17 +347,17 @@ class BNWrappedWidget(QtWidgets.QWidget):
             }
         """
         
-        # Add export button
+        # Add export combined button
         self.exportButton = QtWidgets.QPushButton("Export Combined Image", self)
         self.exportButton.clicked.connect(self.exportCombinedImage)
         self.exportButton.setStyleSheet(buttonStyle)
         buttonLayout.addWidget(self.exportButton)
         
-        # Add refresh button
-        self.refreshButton = QtWidgets.QPushButton("Refresh Stats", self)
-        self.refreshButton.clicked.connect(self.refresh_stats)
-        self.refreshButton.setStyleSheet(buttonStyle)
-        buttonLayout.addWidget(self.refreshButton)
+        # Add export all button (images + HTML)
+        self.exportAllButton = QtWidgets.QPushButton("Export All", self)
+        self.exportAllButton.clicked.connect(self.exportImages)
+        self.exportAllButton.setStyleSheet(buttonStyle)
+        buttonLayout.addWidget(self.exportAllButton)
         
         # Add close button
         self.closeButton = QtWidgets.QPushButton("Close", self)
@@ -455,7 +367,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         layout.addLayout(buttonLayout)
         
-    def handleResize(self, event):
+    def resizeEvent(self, event):
         """Handle resize events to keep the overlay properly sized"""
         if hasattr(self, 'overlay'):
             self.overlay.resize(self.width() - 20, self.height() - 60)
@@ -463,36 +375,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         super().resizeEvent(event)
         
     def onTabChanged(self, index):
-        """Handle tab change event to update the quote"""
+        """Handle tab change event"""
         self.current_tab_index = index
-        self.updateQuoteForCurrentTab(index)
         
-    def updateQuoteForCurrentTab(self, index):
-        """Update the quote label based on the current tab"""
-        try:
-            # Make sure quoteLabel exists
-            if not hasattr(self, 'quoteLabel') or self.quoteLabel is None:
-                return
-                
-            quote_prefix = "Quote: "
-            if index == 0:  # Stats Summary
-                quote = self.getJokeForStats()
-            elif index == 1:  # File Formats
-                quote = self.getJokeForFileFormats()
-            elif index == 2:  # CPU Arch
-                quote = self.getJokeForArchitectures()
-            elif index == 3:  # Statistics
-                quote = self.getJokeForBinaryStats()
-            elif index == 4:  # Static Binaries
-                quote = self.getQuoteForStaticBinaries()
-            else:
-                quote = self.getQuote()
-                
-            self.quoteLabel.setText(quote_prefix + quote)
-        except Exception as e:
-            # If there's an error, set a default quote
-            if hasattr(self, 'quoteLabel') and self.quoteLabel is not None:
-                self.quoteLabel.setText("Quote: Welcome to Binary Ninja Wrapped!")
+    # Quote functionality has been moved to individual tabs
         
     def updateUI(self):
         """Update the UI with the latest data after computations are done"""
@@ -521,9 +407,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Restore the previously selected tab
         self.tabs.setCurrentIndex(index)
         
-        # Update the quote based on the current tab
-        self.updateQuoteForCurrentTab(self.tabs.currentIndex())
-        
         # Now remove the overlay if it exists (after all updates are done)
         if hasattr(self, 'overlay'):
             self.overlay.hide()
@@ -535,12 +418,68 @@ class BNWrappedWidget(QtWidgets.QWidget):
     def createStatTab(self, title, imageGenFunc):
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        label = QtWidgets.QLabel(widget)
-        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
+        
+        # Add the image
+        imageLabel = QtWidgets.QLabel(widget)
+        imageLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(imageLabel)
         pixmap = imageGenFunc()
         if pixmap:
-            label.setPixmap(pixmap)
+            imageLabel.setPixmap(pixmap)
+            
+        # Add a quote below the chart based on which chart this is
+        quoteLabel = QtWidgets.QLabel(widget)
+        quoteLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        quoteLabel.setWordWrap(True)
+        
+        # Use theme-appropriate color for the quote background
+        bg_color = ""
+        if "File Format" in title:
+            bg_color = self.get_spotify_colors(tab_index=1)[0]
+        elif "CPU" in title:
+            bg_color = self.get_spotify_colors(tab_index=2)[0]
+        elif "Binary Statistics" in title:
+            bg_color = self.get_spotify_colors(tab_index=3)[0]
+        elif "Static Binaries" in title:
+            bg_color = self.get_spotify_colors(tab_index=4)[0]
+        else:
+            bg_color = "#1DB954"  # Default Spotify green
+            
+        # Determine if background is light or dark
+        if bg_color.startswith('#'):
+            r = int(bg_color[1:3], 16)
+            g = int(bg_color[3:5], 16)
+            b = int(bg_color[5:7], 16)
+            brightness = (0.299*r + 0.587*g + 0.114*b) / 255
+            text_color = 'black' if brightness > 0.5 else 'white'
+        else:
+            text_color = 'white'  # Default to white text
+            
+        quoteLabel.setStyleSheet(f"""
+            background-color: {bg_color};
+            color: {text_color};
+            padding: 10px;
+            border-radius: 5px;
+            font-style: italic;
+            font-size: 14px;
+            margin: 10px;
+        """)
+        
+        # Get the appropriate quote based on the title
+        if "File Format" in title:
+            quote = self.getJokeForFileFormats()
+        elif "CPU" in title:
+            quote = self.getJokeForArchitectures()
+        elif "Binary Statistics" in title:
+            quote = self.getJokeForBinaryStats()
+        elif "Static Binaries" in title:
+            quote = self.getQuoteForStaticBinaries()
+        else:
+            quote = self.getJokeForStats()
+            
+        quoteLabel.setText(quote)
+        layout.addWidget(quoteLabel)
+        
         return widget
 
     def createStatsTextTab(self):
@@ -643,44 +582,32 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Add quote about static binaries
         html += f'<div class="quote">{self.getQuoteForStaticBinaries()}</div>'
         
-        # Add timestamp at the bottom
-        if self.timestamp > 0:
-            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            html += f'<div class="timestamp">Stats last updated: {timestamp_str}</div>'
+        # Add generation timestamp at the bottom
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        html += f'<div class="timestamp">Generated: {current_time}</div>'
         
         html += '</body></html>'
         text.setHtml(html)
         
         layout.addWidget(text)
         
-        # Add timestamp at the bottom
+        # Add generation timestamp
         timestamp_layout = QtWidgets.QHBoxLayout()
         
         # Add timestamp label
         timestamp_label = QtWidgets.QLabel(widget)
-        if self.timestamp > 0:
-            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            timestamp_label.setText(f"Last updated: {timestamp_str}")
-            
-            # Check if it's been more than a week
-            timestamp_age = (datetime.datetime.now() - 
-                           datetime.datetime.fromtimestamp(self.timestamp)).total_seconds() / 86400  # Days
-            if timestamp_age > 7:
-                timestamp_label.setStyleSheet("color: #FF0000; font-style: italic;")  # Red color for outdated stats
-            else:
-                timestamp_label.setStyleSheet("color: #333333; font-style: italic;")
-        else:
-            timestamp_label.setText("Just generated")
-            timestamp_label.setStyleSheet("color: #333333; font-style: italic;")
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp_label.setText(f"Generated: {current_time}")
+        timestamp_label.setStyleSheet("color: #333333; font-style: italic;")
             
         timestamp_layout.addWidget(timestamp_label)
         layout.addLayout(timestamp_layout)
         
         return widget
 
-    def get_spotify_colors(self):
-        # Spotify-like color palette
-        return [
+    def get_spotify_colors(self, tab_index=None):
+        # Define all available colors
+        all_colors = [
             "#1DB954",  # Spotify green
             "#FF9CE0",  # Pink
             "#2E77D0",  # Blue
@@ -689,46 +616,178 @@ class BNWrappedWidget(QtWidgets.QWidget):
             "#B49BC8",  # Purple
             "#FFB9B9",  # Salmon
             "#30A2FF",  # Light blue
+            "#E13300",  # Bright red
+            "#00C5CD",  # Turquoise
+            "#ADFF2F",  # Green yellow
+            "#FF6EB4",  # Hot pink
+            "#9370DB",  # Medium purple
+            "#20B2AA",  # Light sea green
+            "#FF4500",  # Orange red
+            "#00BFFF",  # Deep sky blue
         ]
+        
+        # Store random color schemes for consistent use within a session
+        if not hasattr(self, 'random_color_schemes'):
+            self.random_color_schemes = {}
+            
+            # Initialize with random schemes for each tab
+            for i in range(5):  # 0-4 for the 5 tabs
+                # Shuffle colors and pick the first 8
+                import random
+                shuffled = all_colors.copy()
+                random.shuffle(shuffled)
+                self.random_color_schemes[i] = shuffled[:8]
+        
+        # Return the stored random scheme for the requested tab
+        if tab_index is not None and tab_index in self.random_color_schemes:
+            return self.random_color_schemes[tab_index]
+        
+        # Default palette (used when no tab is specified)
+        return self.random_color_schemes.get(0, all_colors[:8])
 
     def generateFileFormatImage(self):
         formats = self.file_formats
         # Sort by value in descending order
         sorted_formats = dict(sorted(formats.items(), key=operator.itemgetter(1), reverse=True))
         
-        fig, ax = plt.subplots(facecolor="#191414")  # Dark background like Spotify
+        # Use a random dark background color for the chart
+        if not hasattr(self, 'background_colors'):
+            self.background_colors = self.generate_random_backgrounds()
+            
+        background_color = self.background_colors[1]  # Use the color for tab 1
         
-        colors = self.get_spotify_colors()
+        fig, ax = plt.subplots(facecolor=background_color)
+        
+        colors = self.get_spotify_colors(tab_index=1)  # Use File Formats tab-specific colors
+        # Choose text color based on background brightness
+        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(1, False) else 'white'
+        
+        # Increase font sizes for better readability
+        plt.rcParams['font.size'] = 14  # Increase base font size
+        
         wedges, texts, autotexts = ax.pie(
             sorted_formats.values(), 
             labels=sorted_formats.keys(), 
             autopct='%1.1f%%', 
             colors=colors,
-            textprops={'color': 'white'}
+            textprops={'color': text_color, 'fontsize': 14}  # Explicit font size for labels
         )
-        # Make percentage text white and bold
-        for autotext in autotexts:
-            autotext.set_color('white')
+        # Make percentage text bold with appropriate color and larger font based on wedge color
+        for i, autotext in enumerate(autotexts):
+            # Get the wedge this text corresponds to
+            if i < len(wedges):
+                wedge = wedges[i]
+                # Get the wedge color as RGBA
+                wedge_color = wedge.get_facecolor()
+                # Convert RGBA to RGB 0-255
+                r, g, b = [int(c * 255) for c in wedge_color[:3]]
+                # Calculate brightness
+                wedge_brightness = (0.299*r + 0.587*g + 0.114*b) / 255
+                # Set appropriate text color based on wedge brightness
+                wedge_text_color = 'black' if wedge_brightness > 0.5 else 'white'
+                autotext.set_color(wedge_text_color)
+            else:
+                autotext.set_color(text_color)
+                
             autotext.set_fontweight('bold')
+            autotext.set_fontsize(16)  # Larger font for percentages
             
-        ax.set_title("File Format Breakdown", color='white', fontweight='bold')
+        # Also update the label colors and sizes - always use chart background color for these
+        for text in texts:
+            text.set_color(text_color)
+            text.set_fontsize(14)  # Consistent font size for labels
+            
+        # Choose text color based on background brightness
+        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(1, False) else 'white'
+        ax.set_title("File Format Breakdown", color=text_color, fontweight='bold', fontsize=20)
         return self.figureToPixmap(fig)
 
+    def generate_random_backgrounds(self):
+        """Generate random backgrounds for each tab with varying brightness"""
+        import random
+        
+        # Define both dark and light base colors for variety
+        base_colors = [
+            # Dark colors
+            "#1A1A1A",  # Almost black
+            "#121212",  # Spotify dark
+            "#242424",  # Dark gray
+            "#0D1117",  # GitHub dark
+            "#2D2D2D",  # Darker gray
+            # Medium brightness colors
+            "#3D3D3D",  # Medium gray
+            "#444444",  # Medium gray
+            "#555555",  # Medium gray
+            # Light colors (for variety, less likely to be chosen)
+            "#DDDDDD",  # Light gray
+            "#EEEEEE",  # Lighter gray
+        ]
+        
+        # Generate a set of random backgrounds
+        backgrounds = {}
+        background_is_light = {}  # Track if each background is light
+        
+        for i in range(5):  # 0-4 for the 5 tabs
+            # Choose a random base color with preference for darker colors
+            # Use weighted random selection to favor dark backgrounds
+            weights = [5, 5, 5, 5, 5, 3, 3, 3, 1, 1]  # Higher weights for darker colors
+            base = random.choices(base_colors, weights=weights, k=1)[0]
+            
+            # Convert hex to RGB, modify, and convert back
+            r = int(base[1:3], 16)
+            g = int(base[3:5], 16)
+            b = int(base[5:7], 16)
+            
+            # Add a slight tint of a random color to make it more interesting
+            r_mod = random.randint(-20, 40)
+            g_mod = random.randint(-20, 40)
+            b_mod = random.randint(-20, 40)
+            
+            r = max(0, min(255, r + r_mod))
+            g = max(0, min(255, g + g_mod))
+            b = max(0, min(255, b + b_mod))
+            
+            # Convert back to hex
+            bg_color = f"#{r:02x}{g:02x}{b:02x}"
+            backgrounds[i] = bg_color
+            
+            # Calculate brightness using the formula:
+            # (0.299*R + 0.587*G + 0.114*B) / 255
+            # Values > 0.5 are considered light backgrounds
+            brightness = (0.299*r + 0.587*g + 0.114*b) / 255
+            background_is_light[i] = brightness > 0.5
+            
+        # Store the light/dark information for easy access
+        self.background_is_light = background_is_light
+        return backgrounds
+    
     def generateCPUArchImage(self):
         archs = self.cpu_archs
         # Sort by value in descending order
         sorted_archs = dict(sorted(archs.items(), key=operator.itemgetter(1), reverse=True))
         
-        fig, ax = plt.subplots(facecolor="#191414")  # Dark background
+        # Use a random dark background color for the chart
+        if not hasattr(self, 'background_colors'):
+            self.background_colors = self.generate_random_backgrounds()
+            
+        background_color = self.background_colors[2]  # Use the color for tab 2
         
-        colors = self.get_spotify_colors()
+        fig, ax = plt.subplots(facecolor=background_color)
+        
+        colors = self.get_spotify_colors(tab_index=2)  # Use CPU Architecture tab-specific colors
         bars = ax.bar(
             sorted_archs.keys(), 
             sorted_archs.values(),
             color=colors[:len(sorted_archs)]
         )
         
-        # Add value labels on top of bars
+        # Choose text color based on background brightness
+        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(2, False) else 'white'
+        
+        # Increase font sizes for better readability
+        plt.rcParams['font.size'] = 14  # Increase base font size
+        
+        # Add value labels on top of bars with larger font
         for bar in bars:
             height = bar.get_height()
             ax.text(
@@ -737,18 +796,25 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 f'{int(height)}',
                 ha='center', 
                 va='bottom', 
-                color='white', 
-                fontweight='bold'
+                color=text_color, 
+                fontweight='bold',
+                fontsize=16  # Larger font for values
             )
             
-        ax.set_title("CPU Architectures", color='white', fontweight='bold')
-        ax.set_facecolor("#191414")  # Dark background
-        ax.spines['bottom'].set_color('white')
-        ax.spines['top'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['right'].set_color('white')
-        ax.tick_params(axis='x', colors='white')
-        ax.tick_params(axis='y', colors='white')
+        ax.set_title("CPU Architectures", color=text_color, fontweight='bold', fontsize=20)
+        ax.set_facecolor(background_color)  # Use the selected background color
+        
+        # Make the tick labels larger
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        
+        # Update spine colors based on background brightness
+        ax.spines['bottom'].set_color(text_color)
+        ax.spines['top'].set_color(text_color)
+        ax.spines['left'].set_color(text_color)
+        ax.spines['right'].set_color(text_color)
+        ax.tick_params(axis='x', colors=text_color)
+        ax.tick_params(axis='y', colors=text_color)
         return self.figureToPixmap(fig)
 
     def generateBinaryStatsImage(self):
@@ -756,16 +822,28 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Sort by value in descending order
         sorted_stats = dict(sorted(stats.items(), key=operator.itemgetter(1), reverse=True))
         
-        fig, ax = plt.subplots(facecolor="#191414")  # Dark background
+        # Use a random dark background color for the chart
+        if not hasattr(self, 'background_colors'):
+            self.background_colors = self.generate_random_backgrounds()
+            
+        background_color = self.background_colors[3]  # Use the color for tab 3
         
-        colors = self.get_spotify_colors()
+        fig, ax = plt.subplots(facecolor=background_color)
+        
+        colors = self.get_spotify_colors(tab_index=3)  # Use Binary Statistics tab-specific colors
         bars = ax.bar(
             sorted_stats.keys(), 
             sorted_stats.values(),
             color=colors[:len(sorted_stats)]
         )
         
-        # Add value labels on top of bars
+        # Choose text color based on background brightness
+        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(3, False) else 'white'
+        
+        # Increase font sizes for better readability
+        plt.rcParams['font.size'] = 14  # Increase base font size
+        
+        # Add value labels on top of bars with larger font
         for bar in bars:
             height = bar.get_height()
             ax.text(
@@ -774,19 +852,26 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 f'{int(height)}',
                 ha='center', 
                 va='bottom', 
-                color='white', 
-                fontweight='bold'
+                color=text_color, 
+                fontweight='bold',
+                fontsize=16  # Larger font for values
             )
             
-        ax.set_title("Binary Statistics", color='white', fontweight='bold')
-        ax.set_ylabel("Size (KB)", color='white')
-        ax.set_facecolor("#191414")  # Dark background
-        ax.spines['bottom'].set_color('white')
-        ax.spines['top'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['right'].set_color('white')
-        ax.tick_params(axis='x', colors='white')
-        ax.tick_params(axis='y', colors='white')
+        ax.set_title("Binary Statistics", color=text_color, fontweight='bold', fontsize=20)
+        ax.set_ylabel("Size (KB)", color=text_color, fontsize=16)
+        ax.set_facecolor(background_color)  # Use the selected background color
+        
+        # Make the tick labels larger
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        
+        # Update spine colors based on background brightness
+        ax.spines['bottom'].set_color(text_color)
+        ax.spines['top'].set_color(text_color)
+        ax.spines['left'].set_color(text_color)
+        ax.spines['right'].set_color(text_color)
+        ax.tick_params(axis='x', colors=text_color)
+        ax.tick_params(axis='y', colors=text_color)
         return self.figureToPixmap(fig)
 
     def generateStaticBinariesImage(self):
@@ -798,16 +883,28 @@ class BNWrappedWidget(QtWidgets.QWidget):
         static_percentage = (static_count / total * 100) if total > 0 else 0
         dynamic_percentage = (dynamic_count / total * 100) if total > 0 else 0
         
-        fig, ax = plt.subplots(facecolor="#191414")  # Dark background
+        # Use a random dark background color for the chart
+        if not hasattr(self, 'background_colors'):
+            self.background_colors = self.generate_random_backgrounds()
+            
+        background_color = self.background_colors[4]  # Use the color for tab 4
         
-        colors = self.get_spotify_colors()
+        fig, ax = plt.subplots(facecolor=background_color)
+        
+        colors = self.get_spotify_colors(tab_index=4)  # Use Static Binaries tab-specific colors
         bars = ax.bar(
             ['Static', 'Dynamic'], 
             [static_count, dynamic_count],
             color=[colors[0], colors[1]]
         )
         
-        # Add value labels on top of bars
+        # Choose text color based on background brightness
+        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(4, False) else 'white'
+        
+        # Increase font sizes for better readability
+        plt.rcParams['font.size'] = 14  # Increase base font size
+        
+        # Add value labels on top of bars with larger font
         for bar in bars:
             height = bar.get_height()
             percentage = (height / total * 100) if total > 0 else 0
@@ -817,19 +914,26 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 f'{int(height)} ({percentage:.1f}%)',
                 ha='center', 
                 va='bottom', 
-                color='white', 
-                fontweight='bold'
+                color=text_color, 
+                fontweight='bold',
+                fontsize=16  # Larger font for values
             )
             
-        ax.set_title("Static vs Dynamic Binaries", color='white', fontweight='bold')
-        ax.set_ylabel("Count", color='white')
-        ax.set_facecolor("#191414")  # Dark background
-        ax.spines['bottom'].set_color('white')
-        ax.spines['top'].set_color('white')
-        ax.spines['left'].set_color('white')
-        ax.spines['right'].set_color('white')
-        ax.tick_params(axis='x', colors='white')
-        ax.tick_params(axis='y', colors='white')
+        ax.set_title("Static vs Dynamic Binaries", color=text_color, fontweight='bold', fontsize=20)
+        ax.set_ylabel("Count", color=text_color, fontsize=16)
+        ax.set_facecolor(background_color)  # Use the selected background color
+        
+        # Make the tick labels larger
+        ax.tick_params(axis='x', labelsize=14)
+        ax.tick_params(axis='y', labelsize=14)
+        
+        # Update spine colors based on background brightness
+        ax.spines['bottom'].set_color(text_color)
+        ax.spines['top'].set_color(text_color)
+        ax.spines['left'].set_color(text_color)
+        ax.spines['right'].set_color(text_color)
+        ax.tick_params(axis='x', colors=text_color)
+        ax.tick_params(axis='y', colors=text_color)
         return self.figureToPixmap(fig)
 
     def figureToPixmap(self, fig):
@@ -842,7 +946,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         return QtGui.QPixmap.fromImage(img)
 
     def exportCombinedImage(self):
-        """Export a single combined image with all charts and stats"""
+        """Export a single combined image with all charts and stats in a grid layout"""
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save Combined Image", "", "PNG Files (*.png)"
         )
@@ -869,48 +973,85 @@ class BNWrappedWidget(QtWidgets.QWidget):
             "Static Binaries"
         ]
         
-        # Get the total height needed
-        header_height = 140  # Space for title and timestamp
-        quote_height = 50   # Space for each quote
-        chart_height = sum(pixmap.height() for pixmap in chart_pixmaps)
-        chart_spacing = 20 * (len(chart_pixmaps) - 1)  # Space between charts
-        quote_spacing = len(chart_pixmaps) * quote_height  # Space for all quotes
+        # Grid layout configuration
+        columns = 2  # Number of columns in the grid
+        rows = (len(chart_pixmaps) + columns - 1) // columns  # Ceiling division to get number of rows
         
-        total_height = header_height + chart_height + chart_spacing + quote_spacing + 20  # Extra padding at bottom
-        max_width = max(pixmap.width() for pixmap in chart_pixmaps)
+        # Get typical dimensions of the charts
+        chart_width = max(pixmap.width() for pixmap in chart_pixmaps)
+        chart_height = max(pixmap.height() for pixmap in chart_pixmaps)
+        
+        # Grid spacing
+        horizontal_spacing = 40
+        vertical_spacing = 40
+        
+        # Size of the quotes
+        quote_height = 60
+        
+        # Check if wordmark exists to adjust header height
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
+        
+        # Calculate total dimensions for the grid layout
+        header_height = 180 if not wordmark.isNull() else 150  # Space for wordmark, title and timestamp
+        footer_height = 40   # Extra space at the bottom
+        
+        # Total width: margin + (chart_width + spacing) * columns - spacing (no spacing after last column) + margin
+        total_width = 60 + (chart_width + horizontal_spacing) * columns - horizontal_spacing + 60
+        
+        # Total height: header + (chart_height + quote_height + spacing) * rows - spacing (no spacing after last row) + footer
+        total_height = header_height + (chart_height + quote_height + vertical_spacing) * rows - vertical_spacing + footer_height
         
         # Create a new image with the right dimensions
-        combined = QtGui.QPixmap(max_width, total_height)
+        combined = QtGui.QPixmap(total_width, total_height)
         combined.fill(QtGui.QColor("#191414"))  # Dark background
         
         # Paint everything onto the combined image
         painter = QtGui.QPainter(combined)
         
-        # Draw title
+        # Use the wordmark at the top
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
+        if not wordmark.isNull():
+            # Scale the wordmark to fit nicely
+            wordmark_width = min(300, total_width * 0.6)  # Target width in pixels, not more than 60% of total width
+            wordmark = wordmark.scaledToWidth(int(wordmark_width), QtCore.Qt.TransformationMode.SmoothTransformation)
+            
+            # Position the wordmark, centered horizontally
+            wordmark_x = (total_width - wordmark.width()) // 2
+            wordmark_y = 20
+            painter.drawPixmap(wordmark_x, wordmark_y, wordmark)
+        
+        # Draw title below wordmark
         title_font = QtGui.QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(QtCore.Qt.GlobalColor.white)
+        
+        # Adjust title position depending on whether wordmark was drawn
+        title_y = 80 if not wordmark.isNull() else 40
+        
         painter.drawText(
-            QtCore.QRect(0, 20, max_width, 40),
+            QtCore.QRect(0, title_y, total_width, 40),
             QtCore.Qt.AlignmentFlag.AlignCenter,
-            f"{self.user_name}'s Binary Ninja Wrapped"
+            f"{self.user_name}'s Wrapped"
         )
         
-        # Draw timestamp
-        if self.timestamp > 0:
-            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            timestamp_font = QtGui.QFont()
-            timestamp_font.setPointSize(10)
-            timestamp_font.setItalic(True)
-            painter.setFont(timestamp_font)
-            painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
-            painter.drawText(
-                QtCore.QRect(0, 70, max_width, 20),
-                QtCore.Qt.AlignmentFlag.AlignCenter,
-                f"Stats generated: {timestamp_str}"
-            )
+        # Draw generation timestamp
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp_font = QtGui.QFont()
+        timestamp_font.setPointSize(10)
+        timestamp_font.setItalic(True)
+        painter.setFont(timestamp_font)
+        painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
+        
+        # Adjust the timestamp position - it should be below the title
+        timestamp_y = 120 if not wordmark.isNull() else 80
+        
+        painter.drawText(
+            QtCore.QRect(0, timestamp_y, total_width, 20),
+            QtCore.Qt.AlignmentFlag.AlignCenter,
+            f"Generated: {current_time}"
+        )
         
         # Generate quotes for each chart
         quotes = []
@@ -926,14 +1067,32 @@ class BNWrappedWidget(QtWidgets.QWidget):
             else:
                 quotes.append(self.getJokeForStats())
         
-        # Draw each chart with its quote
-        y_pos = header_height
+        # Draw charts and quotes in a grid layout
         for i, pixmap in enumerate(chart_pixmaps):
-            # Center the chart horizontally
-            x_pos = (max_width - pixmap.width()) // 2
+            # Calculate grid position
+            row = i // columns
+            col = i % columns
+            
+            # Calculate position for this chart
+            x_pos = 60 + col * (chart_width + horizontal_spacing) + (chart_width - pixmap.width()) // 2
+            y_pos = header_height + row * (chart_height + quote_height + vertical_spacing)
             
             # Draw the chart
             painter.drawPixmap(x_pos, y_pos, pixmap)
+            
+            # Draw the chart title
+            title_font = QtGui.QFont()
+            title_font.setPointSize(12)
+            title_font.setBold(True)
+            painter.setFont(title_font)
+            painter.setPen(QtCore.Qt.GlobalColor.white)
+            title_x = 60 + col * (chart_width + horizontal_spacing)
+            title_y = y_pos - 25
+            painter.drawText(
+                QtCore.QRect(title_x, title_y, chart_width, 20),
+                QtCore.Qt.AlignmentFlag.AlignCenter,
+                titles[i]
+            )
             
             # Draw the quote below this chart
             quote = quotes[i]
@@ -944,21 +1103,53 @@ class BNWrappedWidget(QtWidgets.QWidget):
             painter.setPen(QtCore.Qt.GlobalColor.white)
             
             # Position for the quote is right below the chart
-            quote_y = y_pos + pixmap.height() + 5
+            quote_x = 60 + col * (chart_width + horizontal_spacing)
+            quote_y = y_pos + pixmap.height() + 10
             
-            # Draw green box for the quote
-            quote_rect = QtCore.QRect(40, quote_y, max_width - 80, 40)
-            painter.fillRect(quote_rect, QtGui.QColor("#1DB954"))
+            # Draw colorful box for the quote - use the tab's color scheme
+            tab_colors = self.get_spotify_colors(tab_index=i+1)
+            quote_rect = QtCore.QRect(quote_x + 10, quote_y, chart_width - 20, quote_height - 10)
+            painter.fillRect(quote_rect, QtGui.QColor(tab_colors[0]))
             
-            # Draw the quote text
+            # Calculate the optimal font size for this quote
+            # Start with a large font size and decrease until it fits
+            optimal_font_size = 16  # Start with this size
+            quote_font.setPointSize(optimal_font_size)
+            
+            # Create a QFontMetrics to measure text
+            font_metrics = QtGui.QFontMetrics(quote_font)
+            
+            # Calculate available width and height
+            available_width = quote_rect.width() - 20  # Subtract some padding
+            available_height = quote_rect.height() - 10  # Subtract some padding
+            
+            # Check if the text fits at current font size
+            text_rect = font_metrics.boundingRect(
+                QtCore.QRect(0, 0, available_width, 1000),  # Tall rectangle for word wrapping
+                QtCore.Qt.TextFlag.TextWordWrap,
+                quote
+            )
+            
+            # Decrease font size until text fits
+            while (text_rect.width() > available_width or text_rect.height() > available_height) and optimal_font_size > 8:
+                optimal_font_size -= 1
+                quote_font.setPointSize(optimal_font_size)
+                font_metrics = QtGui.QFontMetrics(quote_font)
+                text_rect = font_metrics.boundingRect(
+                    QtCore.QRect(0, 0, available_width, 1000),
+                    QtCore.Qt.TextFlag.TextWordWrap,
+                    quote
+                )
+            
+            # Set the optimized font size
+            painter.setFont(quote_font)
+            
+            # Draw the quote text with optimized font size
             painter.drawText(
                 quote_rect,
                 QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
                 quote
             )
-            
-            # Move down for the next chart (include space for chart and quote)
-            y_pos += pixmap.height() + quote_height + 20
         
         painter.end()
         
@@ -967,112 +1158,401 @@ class BNWrappedWidget(QtWidgets.QWidget):
         QtWidgets.QMessageBox.information(self, "Export", "Combined image exported successfully!")
             
     def exportImages(self):
-        """Export individual images and HTML summary (kept for compatibility)"""
+        """Export individual chart images with quotes and HTML summary"""
         directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Export Directory")
         if directory:
-            # Create an HTML file for the stats first
-            html_path = os.path.join(directory, "stats_summary.html")
+            # Define the charts and their associated quotes
+            charts_with_quotes = [
+                {
+                    "filename": "file_format_breakdown.png",
+                    "title": "File Format Breakdown",
+                    "image_func": self.generateFileFormatImage,
+                    "quote_func": self.getJokeForFileFormats
+                },
+                {
+                    "filename": "cpu_architectures.png",
+                    "title": "CPU Architectures",
+                    "image_func": self.generateCPUArchImage,
+                    "quote_func": self.getJokeForArchitectures
+                },
+                {
+                    "filename": "binary_statistics.png", 
+                    "title": "Binary Statistics",
+                    "image_func": self.generateBinaryStatsImage,
+                    "quote_func": self.getJokeForBinaryStats
+                },
+                {
+                    "filename": "static_binaries.png",
+                    "title": "Static vs Dynamic Binaries",
+                    "image_func": self.generateStaticBinariesImage,
+                    "quote_func": self.getQuoteForStaticBinaries
+                }
+            ]
             
-            # Build stats text with HTML formatting
-            html = """
-            <html>
-            <head>
-            <style>
-                body {{ 
-                    font-family: Arial, sans-serif; 
-                    color: white; 
-                    background-color: #1DB954;
-                    padding: 20px;
-                }}
-                h1 {{ 
-                    font-size: 24px; 
-                    text-align: center;
-                    margin-bottom: 20px;
-                }}
-                h2 {{ 
-                    font-size: 20px; 
-                    color: #191414;
-                    margin-top: 15px;
-                }}
-                .stat {{
-                    font-size: 18px;
-                    margin: 10px 0;
-                }}
-                .quote {{
-                    font-style: italic;
+            successfully_saved = 0
+            
+            # Export each image with its quote
+            for chart in charts_with_quotes:
+                # Get the chart image
+                chart_pixmap = chart["image_func"]()
+                if not chart_pixmap:
+                    continue
+                    
+                # Get the quote
+                quote = chart["quote_func"]()
+                
+                # Create a new image with space for the quote
+                quote_height = 80  # Space for the quote
+                padding = 20  # Padding around the image
+                
+                # Create a new pixmap with extra height for the quote
+                final_width = chart_pixmap.width() + (2 * padding)
+                final_height = chart_pixmap.height() + quote_height + (2 * padding)
+                
+                final_pixmap = QtGui.QPixmap(final_width, final_height)
+                
+                # Get background color based on the chart type
+                if "File Format" in chart["title"]:
+                    bg_color = self.background_colors.get(1, "#122F1C")
+                elif "CPU" in chart["title"]:
+                    bg_color = self.background_colors.get(2, "#192A3D")
+                elif "Binary Statistics" in chart["title"]:
+                    bg_color = self.background_colors.get(3, "#2D1A36")
+                elif "Static" in chart["title"]:
+                    bg_color = self.background_colors.get(4, "#3A1923")
+                else:
+                    bg_color = "#191414"
+                    
+                final_pixmap.fill(QtGui.QColor(bg_color))
+                
+                # Create a painter to draw on the final image
+                painter = QtGui.QPainter(final_pixmap)
+                
+                # Draw the chart
+                painter.drawPixmap(padding, padding, chart_pixmap)
+                
+                # Draw the title
+                title_font = QtGui.QFont()
+                title_font.setPointSize(16)
+                title_font.setBold(True)
+                painter.setFont(title_font)
+                
+                # Choose text color based on background brightness
+                # Calculate background brightness
+                r = int(bg_color[1:3], 16)
+                g = int(bg_color[3:5], 16)
+                b = int(bg_color[5:7], 16)
+                brightness = (0.299*r + 0.587*g + 0.114*b) / 255
+                text_color = 'black' if brightness > 0.5 else 'white'
+                
+                painter.setPen(QtGui.QColor(text_color))
+                
+                # Draw the quote in a box at the bottom
+                quote_rect = QtCore.QRect(
+                    padding, 
+                    padding + chart_pixmap.height() + 10, 
+                    final_width - (2 * padding),
+                    quote_height - 10
+                )
+                
+                # Use theme-appropriate color for quote background
+                # Get a color from the chart's color palette
+                if "File Format" in chart["title"]:
+                    quote_bg_color = self.get_spotify_colors(tab_index=1)[0]
+                elif "CPU" in chart["title"]:
+                    quote_bg_color = self.get_spotify_colors(tab_index=2)[0]
+                elif "Binary Statistics" in chart["title"]:
+                    quote_bg_color = self.get_spotify_colors(tab_index=3)[0]
+                elif "Static" in chart["title"]:
+                    quote_bg_color = self.get_spotify_colors(tab_index=4)[0]
+                else:
+                    quote_bg_color = "#1DB954"  # Default Spotify green
+                
+                painter.fillRect(quote_rect, QtGui.QColor(quote_bg_color))
+                
+                # Calculate optimal font size for the quote
+                # Start with a large font size and scale down if needed
+                quote_font = QtGui.QFont()
+                quote_font.setItalic(True)
+                
+                # Choose initial font size based on quote length
+                quote_length = len(quote)
+                if quote_length < 100:
+                    initial_font_size = 14
+                elif quote_length < 200:
+                    initial_font_size = 12
+                else:
+                    initial_font_size = 10
+                
+                # Set initial font size
+                quote_font.setPointSize(initial_font_size)
+                painter.setFont(quote_font)
+                
+                # Calculate if the text fits
+                font_metrics = QtGui.QFontMetrics(quote_font)
+                text_rect = font_metrics.boundingRect(
+                    QtCore.QRect(0, 0, quote_rect.width() - 20, 1000),
+                    QtCore.Qt.TextFlag.TextWordWrap,
+                    quote
+                )
+                
+                # Scale down font if needed until the text fits
+                current_font_size = initial_font_size
+                while (text_rect.height() > quote_rect.height() - 10) and current_font_size > 8:
+                    current_font_size -= 1
+                    quote_font.setPointSize(current_font_size)
+                    painter.setFont(quote_font)
+                    font_metrics = QtGui.QFontMetrics(quote_font)
+                    text_rect = font_metrics.boundingRect(
+                        QtCore.QRect(0, 0, quote_rect.width() - 20, 1000),
+                        QtCore.Qt.TextFlag.TextWordWrap,
+                        quote
+                    )
+                
+                # Determine text color based on background brightness
+                # Calculate quote background brightness
+                qr = int(quote_bg_color[1:3], 16) if quote_bg_color.startswith('#') else 0
+                qg = int(quote_bg_color[3:5], 16) if quote_bg_color.startswith('#') else 0
+                qb = int(quote_bg_color[5:7], 16) if quote_bg_color.startswith('#') else 0
+                qbrightness = (0.299*qr + 0.587*qg + 0.114*qb) / 255
+                quote_text_color = 'black' if qbrightness > 0.5 else 'white'
+                
+                painter.setPen(QtGui.QColor(quote_text_color))
+                
+                # Draw the quote with word wrapping
+                painter.drawText(
+                    quote_rect,
+                    QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
+                    quote
+                )
+                
+                # End painting
+                painter.end()
+                
+                # Save the final image
+                full_path = os.path.join(directory, chart["filename"])
+                if final_pixmap.save(full_path, "PNG"):
+                    successfully_saved += 1
+            
+            # Generate and save HTML summary with stats
+            html_path = os.path.join(directory, "binary_ninja_wrapped.html")
+            
+            # Get current date for the header
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Build an HTML file with all stats
+            css = """
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    color: #FFFFFF;
                     background-color: #191414;
+                    margin: 0;
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .container {
+                    max-width: 900px;
+                    margin: 0 auto;
+                    background-color: #222222;
+                    padding: 30px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                }
+                h1 {
+                    color: #1DB954;
+                    text-align: center;
+                    font-size: 32px;
+                    margin-top: 0;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #333;
+                }
+                h2 {
+                    color: #1DB954;
+                    font-size: 24px;
+                    margin-top: 30px;
+                    border-bottom: 1px solid #333;
+                    padding-bottom: 5px;
+                }
+                .date {
+                    text-align: center;
+                    color: #888;
+                    font-style: italic;
+                    margin-bottom: 30px;
+                }
+                .section {
+                    margin-bottom: 30px;
+                    background-color: #282828;
+                    padding: 20px;
+                    border-radius: 6px;
+                }
+                .stat-item {
+                    font-size: 16px;
+                    margin: 8px 0;
+                }
+                .stat-value {
+                    font-weight: bold;
+                    color: #1DB954;
+                }
+                .quote {
+                    font-style: italic;
+                    background-color: #1DB954;
                     color: white;
-                    padding: 10px;
-                    border-radius: 5px;
-                    margin-top: 15px;
-                    margin-bottom: 15px;
-                }}
-            </style>
+                    padding: 15px;
+                    border-radius: 6px;
+                    margin: 20px 0;
+                    text-align: center;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                }
+                .images {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: space-around;
+                    margin-top: 30px;
+                }
+                .image-link {
+                    margin: 10px;
+                    text-align: center;
+                    color: #1DB954;
+                    text-decoration: none;
+                }
+                .image-link:hover {
+                    text-decoration: underline;
+                }
+                .footer {
+                    text-align: center;
+                    margin-top: 40px;
+                    color: #666;
+                    font-size: 14px;
+                }
+            """
+            
+            html_template = """<!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Binary Ninja Wrapped - Stats Summary</title>
+                <style>{css}</style>
             </head>
             <body>
-            <h1>Your Binary Ninja Wrapped</h1>
+                <div class="container">
+                    <h1>Binary Ninja Wrapped</h1>
+                    <div class="date">Generated on {date}</div>
+                    
+                    <div class="section">
+                        <h2>Overall Stats</h2>
+                        <div class="quote">{overall_quote}</div>
+                        <div class="stat-item">Total Binaries Analyzed: <span class="stat-value">{binary_count}</span></div>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>File Formats</h2>
+                        <div class="quote">{formats_quote}</div>
+            """
             
-            <div class="quote">{}</div>
+            # Format the HTML with our data
+            html = html_template.format(
+                css=css,
+                date=current_date,
+                overall_quote=self.getJokeForStats(),
+                binary_count=self.count,
+                formats_quote=self.getJokeForFileFormats()
+            )
             
-            <h2>File Formats</h2>
-            """.format(self.getJokeForStats())
-            
-            # Sort and add file formats
+            # Add file format stats
             sorted_formats = sorted(self.file_formats.items(), key=operator.itemgetter(1), reverse=True)
             for fmt, count in sorted_formats:
-                html += f'<div class="stat">{fmt}: {count}</div>'
+                html += f'<div class="stat-item">{fmt}: <span class="stat-value">{count}</span></div>\n'
             
-            # Add quote about file formats
-            html += f'<div class="quote">{self.getJokeForFileFormats()}</div>'
+            html += """
+                    </div>
+                    
+                    <div class="section">
+                        <h2>CPU Architectures</h2>
+                        <div class="quote">{0}</div>
+            """.format(self.getJokeForArchitectures())
             
-            html += '<h2>CPU Architectures</h2>'
+            # Add CPU arch stats
             sorted_archs = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)
             for arch, count in sorted_archs:
-                html += f'<div class="stat">{arch}: {count}</div>'
+                html += f'<div class="stat-item">{arch}: <span class="stat-value">{count}</span></div>\n'
             
-            # Add quote about CPU architectures
-            html += f'<div class="quote">{self.getJokeForArchitectures()}</div>'
+            html += """
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Binary Statistics</h2>
+                        <div class="quote">{0}</div>
+            """.format(self.getJokeForBinaryStats())
             
-            html += '<h2>Binary Statistics</h2>'
+            # Add binary stats
             for stat, value in self.binary_stats.items():
-                html += f'<div class="stat">{stat.capitalize()}: {value:.2f} KB</div>'
+                html += f'<div class="stat-item">{stat.capitalize()}: <span class="stat-value">{value:.2f} KB</span></div>\n'
             
-            # Add biggest binary information
+            # Add biggest binary info if available
             if self.biggest_binary["path"]:
-                html += '<h2>Biggest Binary</h2>'
-                html += f'<div class="stat">Path: {os.path.basename(self.biggest_binary["path"])}</div>'
-                html += f'<div class="stat">Size: {self.biggest_binary["size"]:.2f} KB</div>'
-                html += f'<div class="stat">Format: {self.biggest_binary["format"]}</div>'
-                html += f'<div class="stat">Architecture: {self.biggest_binary["arch"]}</div>'
+                binary_name = os.path.basename(self.biggest_binary["path"])
+                binary_size = self.biggest_binary["size"]
+                binary_format = self.biggest_binary["format"]
+                binary_arch = self.biggest_binary["arch"]
                 
-                # Add quote about binary stats
-                html += f'<div class="quote">{self.getJokeForBinaryStats()}</div>'
+                html += f"""
+                        <h3>Biggest Binary</h3>
+                        <div class="stat-item">Path: <span class="stat-value">{binary_name}</span></div>
+                        <div class="stat-item">Size: <span class="stat-value">{binary_size:.2f} KB</span></div>
+                        <div class="stat-item">Format: <span class="stat-value">{binary_format}</span></div>
+                        <div class="stat-item">Architecture: <span class="stat-value">{binary_arch}</span></div>
+                """
             
-            html += f'<h2>Static Binaries</h2>'
-            html += f'<div class="stat">Static: {self.static_binaries_count["static"]}</div>'
-            html += f'<div class="stat">Dynamic: {self.static_binaries_count["dynamic"]}</div>'
+            # Get static binaries quote and counts
+            static_quote = self.getQuoteForStaticBinaries()
+            static_count = self.static_binaries_count["static"]
+            dynamic_count = self.static_binaries_count["dynamic"]
             
-            # Add quote about static binaries
-            html += f'<div class="quote">{self.getQuoteForStaticBinaries()}</div>'
+            html += f"""
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Static vs Dynamic Binaries</h2>
+                        <div class="quote">{static_quote}</div>
+                        <div class="stat-item">Static: <span class="stat-value">{static_count}</span></div>
+                        <div class="stat-item">Dynamic: <span class="stat-value">{dynamic_count}</span></div>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Images</h2>
+                        <div class="images">
+                            <a href="file_format_breakdown.png" class="image-link">File Format Breakdown</a>
+                            <a href="cpu_architectures.png" class="image-link">CPU Architectures</a>
+                            <a href="binary_statistics.png" class="image-link">Binary Statistics</a>
+                            <a href="static_binaries.png" class="image-link">Static vs Dynamic Binaries</a>
+                        </div>
+                    </div>
+                    
+                    <div class="footer">
+                        Generated by Binary Ninja Wrapped | {self.user_name}'s Analysis Stats
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
             
-            html += '</body></html>'
+            # Write the HTML file
+            try:
+                with open(html_path, 'w') as f:
+                    f.write(html)
+                html_saved = True
+            except Exception as e:
+                bnlog(LogLevel.ErrorLog, f"Error saving HTML: {str(e)}")
+                html_saved = False
             
-            with open(html_path, 'w') as f:
-                f.write(html)
-            
-            # Export the images
-            images = [
-                ("file_format_breakdown.png", self.generateFileFormatImage),
-                ("cpu_architectures.png", self.generateCPUArchImage),
-                ("binary_statistics.png", self.generateBinaryStatsImage),
-                ("static_binaries.png", self.generateStaticBinariesImage)
-            ]
-            for filename, imageFunc in images:
-                pixmap = imageFunc()
-                if pixmap:
-                    full_path = os.path.join(directory, filename)
-                    pixmap.save(full_path, "PNG")
-            QtWidgets.QMessageBox.information(self, "Export", "Images and stats summary exported successfully!")
+            # Show completion message
+            if html_saved:
+                message = f"Successfully exported {successfully_saved} images and HTML summary to:\n{directory}"
+            else:
+                message = f"Successfully exported {successfully_saved} images to:\n{directory}\nFailed to save HTML summary."
+                
+            QtWidgets.QMessageBox.information(self, "Export Complete", message)
 
     def getJokeForStats(self):
         """Get a quote about overall statistics"""
@@ -1313,27 +1793,41 @@ def launchBNWrapped(context):
     # This will be handled in the BNWrappedWidget's initialization
     
 def createSplashImage():
-    """Create a stylish splash screen image"""
-    # Create a pixmap for the splash screen
-    pixmap = QtGui.QPixmap(500, 300)
+    """Create a stylish splash screen image with the Binary Ninja wordmark logo"""
+    # Create a pixmap for the splash screen - make it larger
+    pixmap = QtGui.QPixmap(700, 400)
     pixmap.fill(QtGui.QColor("#191414"))  # Dark background
     
     # Create a painter to draw on the pixmap
     painter = QtGui.QPainter(pixmap)
     
-    # Draw colorful gradient boxes
-    colors = [
-        QtGui.QColor("#1DB954"),
-        QtGui.QColor("#FF9CE0"),
-        QtGui.QColor("#2E77D0"),
-        QtGui.QColor("#FF7900"),
-        QtGui.QColor("#FFFF64"),
+    # Draw colorful gradient boxes - use random colors for visual interest
+    import random
+    
+    # Define a larger set of possible colors for more variety
+    color_options = [
+        QtGui.QColor("#1DB954"),  # Spotify green
+        QtGui.QColor("#FF9CE0"),  # Pink
+        QtGui.QColor("#2E77D0"),  # Blue
+        QtGui.QColor("#FF7900"),  # Orange
+        QtGui.QColor("#FFFF64"),  # Yellow
+        QtGui.QColor("#B49BC8"),  # Purple
+        QtGui.QColor("#FFB9B9"),  # Salmon
+        QtGui.QColor("#30A2FF"),  # Light blue
+        QtGui.QColor("#E13300"),  # Bright red
+        QtGui.QColor("#00C5CD"),  # Turquoise
+        QtGui.QColor("#ADFF2F"),  # Green yellow
+        QtGui.QColor("#FF6EB4"),  # Hot pink
     ]
     
+    # Randomly select 5 colors
+    random.shuffle(color_options)
+    colors = color_options[:5]
+    
     box_size = 80
-    box_margin = 15
+    box_margin = 25  # Increased margin for better spacing
     box_start_x = (pixmap.width() - (box_size * 3 + box_margin * 2)) // 2
-    box_start_y = 50
+    box_start_y = 60  # Move boxes down to avoid overlap with wordmark
     
     for i in range(5):
         row = i // 3
@@ -1350,17 +1844,18 @@ def createSplashImage():
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.drawRoundedRect(x, y, box_size, box_size, 10, 10)
     
-    # Draw text
-    font = QtGui.QFont()
-    font.setPointSize(24)
-    font.setBold(True)
-    painter.setFont(font)
-    painter.setPen(QtCore.Qt.GlobalColor.white)
-    painter.drawText(
-        QtCore.QRect(0, 220, pixmap.width(), 40),
-        QtCore.Qt.AlignmentFlag.AlignCenter,
-        "Binary Ninja Wrapped"
-    )
+    # Add the Binary Ninja wordmark logo
+    # For dark background, use the dark wordmark as requested
+    wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-dark.png")
+    if not wordmark.isNull():
+        # Scale the wordmark to fit nicely 
+        wordmark_width = 350  # Target width in pixels, increased for better visibility
+        wordmark = wordmark.scaledToWidth(wordmark_width, QtCore.Qt.TransformationMode.SmoothTransformation)
+        
+        # Position the wordmark at the top, centered horizontally
+        wordmark_x = (pixmap.width() - wordmark.width()) // 2
+        wordmark_y = 280  # Position below the boxes to avoid overlap
+        painter.drawPixmap(wordmark_x, wordmark_y, wordmark)
     
     # Finish painting
     painter.end()
