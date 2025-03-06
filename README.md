@@ -2,7 +2,7 @@
 
 A fun "Spotify Wrapped" style visualization tool for your Binary Ninja usage.
 
-![Binary Ninja Wrapped Screenshot](https://example.com/screenshot.png)
+![Binary Ninja Wrapped Screenshot](./wrapped.png)
 
 ## Overview
 
@@ -42,6 +42,10 @@ Each chart comes with personalized, sometimes humorous commentary on your binary
 3. Select **Binja Wrapped**
 4. Browse through the tabs to explore different aspects of your binary analysis habits
 5. Use the **Export Combined Image** button to save a shareable collage
+
+## Example
+
+![example image](./example.png)
 
 ## Requirements
 

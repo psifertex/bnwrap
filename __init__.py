@@ -787,7 +787,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Increase font sizes for better readability
         plt.rcParams['font.size'] = 14  # Increase base font size
         
-        # Add value labels on top of bars with larger font
+        # Add value labels on top of bars with font size based on number of bars
+        # If more than 3 bars, use smaller font size
+        label_fontsize = 16 if len(sorted_archs) <= 3 else 10
+        
         for bar in bars:
             height = bar.get_height()
             ax.text(
@@ -798,15 +801,14 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 va='bottom', 
                 color=text_color, 
                 fontweight='bold',
-                fontsize=16  # Larger font for values
+                fontsize=label_fontsize
             )
             
         ax.set_title("CPU Architectures", color=text_color, fontweight='bold', fontsize=20)
         ax.set_facecolor(background_color)  # Use the selected background color
         
-        # Make the tick labels larger
-        ax.tick_params(axis='x', labelsize=14)
-        ax.tick_params(axis='y', labelsize=14)
+        ax.tick_params(axis='x', labelsize=label_fontsize)
+        ax.tick_params(axis='y', labelsize=label_fontsize)
         
         # Update spine colors based on background brightness
         ax.spines['bottom'].set_color(text_color)
@@ -843,7 +845,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Increase font sizes for better readability
         plt.rcParams['font.size'] = 14  # Increase base font size
         
-        # Add value labels on top of bars with larger font
+        # Add value labels on top of bars with font size based on number of bars
+        # If more than 3 bars, use smaller font size
+        label_fontsize = 16 if len(sorted_stats) <= 3 else 10
+        
         for bar in bars:
             height = bar.get_height()
             ax.text(
@@ -854,7 +859,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 va='bottom', 
                 color=text_color, 
                 fontweight='bold',
-                fontsize=16  # Larger font for values
+                fontsize=label_fontsize
             )
             
         ax.set_title("Binary Statistics", color=text_color, fontweight='bold', fontsize=20)
@@ -862,8 +867,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
         ax.set_facecolor(background_color)  # Use the selected background color
         
         # Make the tick labels larger
-        ax.tick_params(axis='x', labelsize=14)
-        ax.tick_params(axis='y', labelsize=14)
+        ax.tick_params(axis='x', labelsize=label_fontsize)
+        ax.tick_params(axis='y', labelsize=label_fontsize)
         
         # Update spine colors based on background brightness
         ax.spines['bottom'].set_color(text_color)
@@ -904,7 +909,12 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Increase font sizes for better readability
         plt.rcParams['font.size'] = 14  # Increase base font size
         
-        # Add value labels on top of bars with larger font
+        # Determine number of bars (always 2 for static vs dynamic, but for consistency)
+        num_bars = 2  # ['Static', 'Dynamic']
+        # Font size based on number of bars (consistent with other charts)
+        label_fontsize = 16 if num_bars <= 3 else 12
+        
+        # Add value labels on top of bars with appropriate font size
         for bar in bars:
             height = bar.get_height()
             percentage = (height / total * 100) if total > 0 else 0
@@ -916,7 +926,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 va='bottom', 
                 color=text_color, 
                 fontweight='bold',
-                fontsize=16  # Larger font for values
+                fontsize=label_fontsize
             )
             
         ax.set_title("Static vs Dynamic Binaries", color=text_color, fontweight='bold', fontsize=20)
@@ -1869,4 +1879,4 @@ UIAction.registerAction("Binja Wrapped", "Generate a Spotify-wrapped style summa
 UIActionHandler.globalActions().bindAction("Binja Wrapped", UIAction(launchBNWrapped))
 
 # Add to the Plugin Menu
-Menu.mainMenu("Plugins").addAction("Binja Wrapped", "BNWrapped")
+Menu.mainMenu("Plugins").addAction("Binja Wrapped", "Plugins")
