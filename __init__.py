@@ -480,21 +480,23 @@ class BNWrappedWidget(QtWidgets.QWidget):
         pixmap = imageGenFunc()
         if pixmap:
             label.setPixmap(pixmap)
-        return widget
 
-    def createStatsTextTab(self):
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-
-        # Create a colorful background
         palette = widget.palette()
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#1DB954"))
         widget.setAutoFillBackground(True)
         widget.setPalette(palette)
+        return widget
 
+    def createStatsTextTab(self):
         # Create styled text for stats
         text = QtWidgets.QTextEdit()
         text.setReadOnly(True)
+
+        # Create a colorful background
+        palette = text.palette()
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#1DB954"))
+        text.setAutoFillBackground(True)
+        text.setPalette(palette)
 
         # Build stats text with HTML formatting, escaping CSS curly braces
         html = """
@@ -540,11 +542,11 @@ class BNWrappedWidget(QtWidgets.QWidget):
         </style>
         </head>
         <body>
-        <h1>Hey {} Here's Your Binary Ninja Wrapped</h1>
+        <h1>Hey, {}, here's your Binary Ninja Wrapped!</h1>
         """.format(self.user_name)
 
         # Add quote about general stats
-        html += f'<div class="quote">{self.getJokeForStats()}</div>'
+        html += f'<div class="quote" style="text-align: center;">{self.getJokeForStats()}</div>'
 
         html += '<h2>File Formats</h2>'
         # Sort and add file formats
@@ -555,6 +557,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Add quote about file formats
         html += f'<div class="quote">{self.getJokeForFileFormats()}</div>'
 
+        html += '<hr />'
+
         html += '<h2>CPU Architectures</h2>'
         sorted_archs = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)
         for arch, count in sorted_archs:
@@ -563,18 +567,22 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Add quote about CPU architectures
         html += f'<div class="quote">{self.getJokeForArchitectures()}</div>'
 
+        html += '<hr />'
+
         html += '<h2>Binary Statistics</h2>'
         for stat, value in self.binary_stats.items():
             html += f'<div class="stat">{stat.capitalize()}: {value:.2f} KB</div>'
 
         # Add biggest binary information
         if self.biggest_binary["path"]:
+            html += '<hr />'
             html += '<h2>Biggest Binary</h2>'
             html += f'<div class="stat">Path: {os.path.basename(self.biggest_binary["path"])}</div>'
             html += f'<div class="stat">Size: {self.biggest_binary["size"]:.2f} KB</div>'
             html += f'<div class="stat">Format: {self.biggest_binary["format"]}</div>'
             html += f'<div class="stat">Architecture: {self.biggest_binary["arch"]}</div>'
 
+        html += '<hr />'
         html += f'<h2>Static Binaries</h2>'
         html += f'<div class="stat">Static: {self.static_binaries_count["static"]}</div>'
         html += f'<div class="stat">Dynamic: {self.static_binaries_count["dynamic"]}</div>'
@@ -590,32 +598,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         html += '</body></html>'
         text.setHtml(html)
 
-        layout.addWidget(text)
-
-        # Add timestamp at the bottom
-        timestamp_layout = QtWidgets.QHBoxLayout()
-
-        # Add timestamp label
-        timestamp_label = QtWidgets.QLabel(widget)
-        if self.timestamp > 0:
-            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            timestamp_label.setText(f"Last updated: {timestamp_str}")
-
-            # Check if it's been more than a week
-            timestamp_age = (datetime.datetime.now() -
-                           datetime.datetime.fromtimestamp(self.timestamp)).total_seconds() / 86400  # Days
-            if timestamp_age > 7:
-                timestamp_label.setStyleSheet("color: #FF0000; font-style: italic;")  # Red color for outdated stats
-            else:
-                timestamp_label.setStyleSheet("color: #333333; font-style: italic;")
-        else:
-            timestamp_label.setText("Just generated")
-            timestamp_label.setStyleSheet("color: #333333; font-style: italic;")
-
-        timestamp_layout.addWidget(timestamp_label)
-        layout.addLayout(timestamp_layout)
-
-        return widget
+        return text
 
     def get_spotify_colors(self):
         # Spotify-like color palette
