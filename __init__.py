@@ -7,12 +7,14 @@ import datetime
 import getpass
 import platform
 import pwd
-from binaryninja import PluginCommand, load, SymbolType, user_directory
+from binaryninja import load, SymbolType, user_directory
+from binaryninjaui import UIActionHandler, UIActionHandler, UIAction, Menu, UIContext
 from binaryninja.log import log as bnlog
 from binaryninja.log import LogLevel
 from PySide6 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
-import matplotlib as mpl
+
+CURRENT_WRAPPED = None
 
 class BNWrappedWidget(QtWidgets.QWidget):
     def __init__(self, recent_files, splash=None, parent=None):
@@ -1075,7 +1077,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
         ]
         return random.choice(quotes)
 
-def launchBNWrapped(bv):
+def launchBNWrapped(context: UIContext):
+    global CURRENT_WRAPPED
     # Get the actual recent files from settings
     recent_files = QtCore.QSettings().value("ui/recentFiles", [], type=list)
     
@@ -1098,7 +1101,7 @@ def launchBNWrapped(bv):
     widget = BNWrappedWidget(recent_files, splash)
     widget.resize(800, 600)
     widget.show()
-    bv.user_data = widget
+    CURRENT_WRAPPED = widget
     
 def createSplashImage():
     """Create a stylish splash screen image"""
@@ -1155,10 +1158,9 @@ def createSplashImage():
     
     return pixmap
 
-PluginCommand.register("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files", launchBNWrapped)
-
-
-
-
-
-
+UIAction.registerAction("Binja Wrapped")
+UIActionHandler.globalActions().bindAction(
+  "Binja Wrapped", UIAction(launchBNWrapped)
+)
+Menu.mainMenu("File").addAction("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files")
+UIContext.registerFileOpenMode("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files", "Binja Wrapped")
