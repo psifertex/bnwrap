@@ -7,13 +7,14 @@ import datetime
 import getpass
 import platform
 import pwd
-from binaryninja import PluginCommand, load, SymbolType, user_directory
+from binaryninja import load, SymbolType, user_directory
 from binaryninja.log import log as bnlog
 from binaryninja.log import LogLevel
 from PySide6 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+widget = None
 class BNWrappedWidget(QtWidgets.QWidget):
     def __init__(self, recent_files, splash=None, parent=None):
         super().__init__(parent)
@@ -25,9 +26,11 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.static_binaries_count = {'static': 0, 'dynamic': 0}
         self.biggest_binary = {"path": "", "size": 0, "format": "", "arch": ""}
         self.splash = splash  # Store the splash screen reference
+        self.splash_start_time = datetime.datetime.now()  # Track when the splash was shown
         self.cache_path = os.path.join(user_directory(), "wrapped_cache.json")
         self.timestamp = 0  # When the data was last updated
         self.user_name = self.get_user_name()  # Get the user's name
+        self.current_tab_index = 0  # Track the current tab for custom quotes
         
         # Initialize UI with placeholder content
         self.initUI(True)
@@ -41,7 +44,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         cache_too_old = cache_age > 604800  # 7 days in seconds
         
         if cache_loaded and not cache_too_old:
-            # Update UI with loaded data
+            # Update UI with loaded data, but ensure splash is shown for at least 3 seconds
             QtCore.QTimer.singleShot(100, self.updateUI)
         else:
             # Start stats computation in a small delay to allow UI to render first
@@ -50,7 +53,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
     def get_user_name(self):
         """Get the user's name in a cross-platform way"""
         try:
-            # Try to get the full name
             if platform.system() == "Windows":
                 # Windows-specific approach
                 import ctypes
@@ -71,15 +73,17 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 except (KeyError, IndexError):
                     pass
             
-            # Fallback to just username
             return getpass.getuser()
         except:
-            # Final fallback
             return "Binary Ninja User"
 
     def skimFile(self, file_path):
         # Stub: skim the file for relevant information
         result = {}
+        result['file_formats'] = ''
+        result['arch'] = ''
+        result['size'] = 0
+        result['num_imports'] = 0
         # skip files that don't exist or are directories:
         if not os.path.exists(file_path) or os.path.isdir(file_path):
             return result
@@ -89,24 +93,37 @@ class BNWrappedWidget(QtWidgets.QWidget):
             result['file_formats'] = bv.view_type
             result['arch'] = bv.arch.name
             result['size'] = os.path.getsize(file_path) / 1024
-            # TODO: Handle fat MachO files
+            # TODO: Handle fat MachO files better here
             num_imports = len(bv.get_symbols_of_type(SymbolType.ImportAddressSymbol))
             result['num_imports'] = num_imports
             # Determine if binary is statically compiled based on import count
             result['is_static'] = num_imports <= 5
-            bnlog(LogLevel.InfoLog, f"File: {file_path}, Format: {result['file_formats']}, Arch: {result['arch']}, Size: {result['size']} KB, Imports: {num_imports}")
+            bnlog(LogLevel.DebugLog, f"File: {file_path}, Format: {result['file_formats']}, Arch: {result['arch']}, Size: {result['size']} KB, Imports: {num_imports}")
         return result
 
     def showProgressDialog(self):
         """Show a progress dialog while computing stats"""
-        # Close splash screen if it exists
+        # Only close splash screen if it's been displayed for at least 3 seconds
         if hasattr(self, 'splash') and self.splash:
-            self.splash.close()
+            elapsed_time = (datetime.datetime.now() - self.splash_start_time).total_seconds()
+            if elapsed_time < 3.0:
+                # Wait until 3 seconds have passed
+                remaining_time = int((3.0 - elapsed_time) * 1000)
+                QtCore.QTimer.singleShot(remaining_time, self.closeSplash)
+            else:
+                # Already been 3 seconds, close it now
+                self.closeSplash()
             
         # Make sure any existing overlay doesn't catch Escape key
         # by ensuring it doesn't have focus
         if hasattr(self, 'overlay'):
             self.overlay.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+            
+    def closeSplash(self):
+        """Close the splash screen after ensuring minimum display time"""
+        if hasattr(self, 'splash') and self.splash:
+            self.splash.close()
+            self.splash = None
             
         if not self.recent_files:
             # If no files, keep the placeholder data
@@ -218,9 +235,16 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 self.static_binaries_count = data.get('static_binaries_count', {'static': 0, 'dynamic': 0})
                 self.biggest_binary = data.get('biggest_binary', {"path": "", "size": 0, "format": "", "arch": ""})
                 
-                # Close splash screen if it exists
+                # Close splash screen if it exists, but ensure it's been shown for at least 3 seconds
                 if hasattr(self, 'splash') and self.splash:
-                    self.splash.close()
+                    elapsed_time = (datetime.datetime.now() - self.splash_start_time).total_seconds()
+                    if elapsed_time < 3.0:
+                        # Wait until 3 seconds have passed
+                        remaining_time = int((3.0 - elapsed_time) * 1000)
+                        QtCore.QTimer.singleShot(remaining_time, self.closeSplash)
+                    else:
+                        # Already been 3 seconds, close it now
+                        self.closeSplash()
                 
                 return True
         except Exception as e:
@@ -296,11 +320,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
             # Update static/dynamic binaries count
             if 'is_static' in result and result['is_static']:
-                bnlog(LogLevel.InfoLog, f"Static binary: {result['is_static']}")
-                if result['is_static']:
-                    self.static_binaries_count['static'] += 1
-                else:
-                    self.static_binaries_count['dynamic'] += 1
+                self.static_binaries_count['static'] += 1
+            else:
+                self.static_binaries_count['dynamic'] += 1
             
             # Track biggest binary
             if result['size'] > self.biggest_binary["size"]:
@@ -346,6 +368,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
         # Create tabs widget
         self.tabs = QtWidgets.QTabWidget(self)
+        # Connect tab change signal to update quote
+        self.tabs.currentChanged.connect(self.onTabChanged)
         layout.addWidget(self.tabs)
 
         # Create tab content
@@ -362,6 +386,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.tabs.addTab(self.binaryStatsTab, "Statistics")
         self.tabs.addTab(self.staticBinariesTab, "Static Binaries")
 
+        # Initialize the quote label first, so it's always available
+        self.quoteLabel = QtWidgets.QLabel(self)
+        layout.addWidget(self.quoteLabel)
+        
         # Add overlay for placeholder mode
         if use_placeholder:
             self.overlay = QtWidgets.QLabel("Loading stats...", self)
@@ -383,9 +411,12 @@ class BNWrappedWidget(QtWidgets.QWidget):
             # Resize event handler to keep overlay properly sized
             self.resizeEvent = self.handleResize
 
-        # Add quote label
-        self.quoteLabel = QtWidgets.QLabel("Quote of the day: " + self.getQuote(), self)
-        layout.addWidget(self.quoteLabel)
+        # Initialize the quote with the first tab's content
+        try:
+            self.updateQuoteForCurrentTab(0)  # Initialize with first tab
+        except Exception as e:
+            # If there's an error, set a default quote
+            self.quoteLabel.setText("Quote: Welcome to Binary Ninja Wrapped!")
         
         # Add button container at the bottom
         buttonLayout = QtWidgets.QHBoxLayout()
@@ -428,8 +459,40 @@ class BNWrappedWidget(QtWidgets.QWidget):
         """Handle resize events to keep the overlay properly sized"""
         if hasattr(self, 'overlay'):
             self.overlay.resize(self.width() - 20, self.height() - 60)
-        # Call the original resize event
-        QtWidgets.QWidget.resizeEvent(self, event)
+        # Call the original resize event handler
+        super().resizeEvent(event)
+        
+    def onTabChanged(self, index):
+        """Handle tab change event to update the quote"""
+        self.current_tab_index = index
+        self.updateQuoteForCurrentTab(index)
+        
+    def updateQuoteForCurrentTab(self, index):
+        """Update the quote label based on the current tab"""
+        try:
+            # Make sure quoteLabel exists
+            if not hasattr(self, 'quoteLabel') or self.quoteLabel is None:
+                return
+                
+            quote_prefix = "Quote: "
+            if index == 0:  # Stats Summary
+                quote = self.getJokeForStats()
+            elif index == 1:  # File Formats
+                quote = self.getJokeForFileFormats()
+            elif index == 2:  # CPU Arch
+                quote = self.getJokeForArchitectures()
+            elif index == 3:  # Statistics
+                quote = self.getJokeForBinaryStats()
+            elif index == 4:  # Static Binaries
+                quote = self.getQuoteForStaticBinaries()
+            else:
+                quote = self.getQuote()
+                
+            self.quoteLabel.setText(quote_prefix + quote)
+        except Exception as e:
+            # If there's an error, set a default quote
+            if hasattr(self, 'quoteLabel') and self.quoteLabel is not None:
+                self.quoteLabel.setText("Quote: Welcome to Binary Ninja Wrapped!")
         
     def updateUI(self):
         """Update the UI with the latest data after computations are done"""
@@ -458,8 +521,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Restore the previously selected tab
         self.tabs.setCurrentIndex(index)
         
-        # Update the quote
-        self.quoteLabel.setText("Quote of the day: " + self.getQuote())
+        # Update the quote based on the current tab
+        self.updateQuoteForCurrentTab(self.tabs.currentIndex())
         
         # Now remove the overlay if it exists (after all updates are done)
         if hasattr(self, 'overlay'):
@@ -792,21 +855,29 @@ class BNWrappedWidget(QtWidgets.QWidget):
             file_path += '.png'
             
         # Generate all the chart images
-        charts = [
-            ("File Format Breakdown", self.generateFileFormatImage()),
-            ("CPU Architectures", self.generateCPUArchImage()),
-            ("Binary Statistics", self.generateBinaryStatsImage()),
-            ("Static Binaries", self.generateStaticBinariesImage())
+        chart_pixmaps = [
+            self.generateFileFormatImage(),
+            self.generateCPUArchImage(),
+            self.generateBinaryStatsImage(),
+            self.generateStaticBinariesImage()
+        ]
+        
+        titles = [
+            "File Format Breakdown",
+            "CPU Architectures",
+            "Binary Statistics",
+            "Static Binaries"
         ]
         
         # Get the total height needed
         header_height = 140  # Space for title and timestamp
-        footer_height = 60   # Space for quote
-        chart_height = sum(chart[1].height() for _, chart in charts)
-        spacing = 20 * (len(charts) - 1)  # Space between charts
+        quote_height = 50   # Space for each quote
+        chart_height = sum(pixmap.height() for pixmap in chart_pixmaps)
+        chart_spacing = 20 * (len(chart_pixmaps) - 1)  # Space between charts
+        quote_spacing = len(chart_pixmaps) * quote_height  # Space for all quotes
         
-        total_height = header_height + chart_height + spacing + footer_height
-        max_width = max(chart.width() for _, chart in charts)
+        total_height = header_height + chart_height + chart_spacing + quote_spacing + 20  # Extra padding at bottom
+        max_width = max(pixmap.width() for pixmap in chart_pixmaps)
         
         # Create a new image with the right dimensions
         combined = QtGui.QPixmap(max_width, total_height)
@@ -841,36 +912,53 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 f"Stats generated: {timestamp_str}"
             )
         
-        # Draw each chart
+        # Generate quotes for each chart
+        quotes = []
+        for i, title in enumerate(titles):
+            if "File Format" in title:
+                quotes.append(self.getJokeForFileFormats())
+            elif "CPU" in title:
+                quotes.append(self.getJokeForArchitectures())
+            elif "Binary Statistics" in title:
+                quotes.append(self.getJokeForBinaryStats())
+            elif "Static Binaries" in title:
+                quotes.append(self.getQuoteForStaticBinaries())
+            else:
+                quotes.append(self.getJokeForStats())
+        
+        # Draw each chart with its quote
         y_pos = header_height
-        for title, chart in charts:
+        for i, pixmap in enumerate(chart_pixmaps):
             # Center the chart horizontally
-            x_pos = (max_width - chart.width()) // 2
+            x_pos = (max_width - pixmap.width()) // 2
             
             # Draw the chart
-            painter.drawPixmap(x_pos, y_pos, chart)
+            painter.drawPixmap(x_pos, y_pos, pixmap)
             
-            # Move down for the next chart
-            y_pos += chart.height() + 20
-        
-        # Draw a quote at the bottom
-        quote = self.getJoke()
-        quote_font = QtGui.QFont()
-        quote_font.setPointSize(12)
-        quote_font.setItalic(True)
-        painter.setFont(quote_font)
-        painter.setPen(QtCore.Qt.GlobalColor.white)
-        
-        # Draw green box for the quote
-        quote_rect = QtCore.QRect(20, total_height - footer_height, max_width - 40, footer_height - 10)
-        painter.fillRect(quote_rect, QtGui.QColor("#1DB954"))
-        
-        # Draw the quote text
-        painter.drawText(
-            quote_rect,
-            QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
-            quote
-        )
+            # Draw the quote below this chart
+            quote = quotes[i]
+            quote_font = QtGui.QFont()
+            quote_font.setPointSize(10)
+            quote_font.setItalic(True)
+            painter.setFont(quote_font)
+            painter.setPen(QtCore.Qt.GlobalColor.white)
+            
+            # Position for the quote is right below the chart
+            quote_y = y_pos + pixmap.height() + 5
+            
+            # Draw green box for the quote
+            quote_rect = QtCore.QRect(40, quote_y, max_width - 80, 40)
+            painter.fillRect(quote_rect, QtGui.QColor("#1DB954"))
+            
+            # Draw the quote text
+            painter.drawText(
+                quote_rect,
+                QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
+                quote
+            )
+            
+            # Move down for the next chart (include space for chart and quote)
+            y_pos += pixmap.height() + quote_height + 20
         
         painter.end()
         
@@ -995,6 +1083,12 @@ class BNWrappedWidget(QtWidgets.QWidget):
             f"Your binaries collectively take up {sum(self.binary_stats.values())/3:.2f} KB. That's like... a small picture of a cat.",
             f"Hey {self.user_name}, if reverse engineering were an Olympic sport, you'd be a contender with those {self.count} binaries!",
             f"Binary analysis level: {self.count}. Keep going {self.user_name}, you're doing great!",
+            f"Your reverse engineering journey has taken you through {self.count} binaries. That's dedication!",
+            f"Over {self.count} binaries analyzed - the machines are starting to worry about your skills.",
+            f"With {self.count} files analyzed, you're officially a binary connoisseur.",
+            f"Looking at {self.count} binaries? That's not just a hobby, that's a lifestyle choice.",
+            f"The count is {self.count} binaries and rising! Your curiosity knows no bounds.",
+            f"{self.user_name}, your binary collection of {self.count} files is impressive. Some people collect stamps, you collect binaries.",
         ]
         return random.choice(quotes)
         
@@ -1003,14 +1097,39 @@ class BNWrappedWidget(QtWidgets.QWidget):
         num_formats = len(self.file_formats)
         
         if num_formats == 0:
-            return "No file formats detected? Your binaries are playing hide and seek!"
+            return "No file formats detected? Do you even lift (binaries), bro?"
         elif num_formats == 1:
             format_name = next(iter(self.file_formats.keys()))
-            return f"Just {format_name}? I see you're a person of focus, commitment, and sheer will."
+            quotes = [
+                f"Just {format_name}? I see you're a person of focus, commitment, and sheer will.",
+                f"100% {format_name} - that's what we call specialization in the binary world!",
+                f"A {format_name} purist! There's something to be said for consistency.",
+                f"When it comes to file formats, you've found your one true love: {format_name}.",
+                f"You and {format_name} files - name a more iconic duo. I'll wait."
+            ]
+            return random.choice(quotes)
         elif num_formats == 2:
-            return "Two file formats - it's a binary situation in your binary analysis!"
+            formats = list(self.file_formats.keys())
+            quotes = [
+                "Two file formats - it's a binary situation in your binary analysis!",
+                f"The {formats[0]} vs {formats[1]} battle continues...",
+                "Two file formats walk into a bar... sounds like your typical workday.",
+                f"Balancing between {formats[0]} and {formats[1]} like a digital tightrope walker.",
+                "Your collection is like a tale of two formats - a binary binary."
+            ]
+            return random.choice(quotes)
         elif num_formats >= 3:
-            return f"Variety is the spice of life! With {num_formats} different file formats, your binaries are having a format party."
+            # Get the top format
+            top_format = sorted(self.file_formats.items(), key=operator.itemgetter(1), reverse=True)[0][0]
+            quotes = [
+                f"Variety is the spice of life! With {num_formats} different file formats, your binaries are having a format party.",
+                f"Your file format diversity ({num_formats} types!) would make a biologist proud.",
+                f"You've got {num_formats} different file formats - you're basically the UN of binary formats.",
+                f"A particular fan of {top_format}, but with a healthy appreciation for {num_formats-1} other formats too.",
+                f"Your binaries speak {num_formats} different dialects. You're a digital polyglot!",
+                f"From {top_format} to {list(self.file_formats.keys())[-1]}, your format collection spans the binary alphabet."
+            ]
+            return random.choice(quotes)
         else:
             return "Your file formats are as diverse as a box of artisanal chocolates!"
 
@@ -1019,30 +1138,85 @@ class BNWrappedWidget(QtWidgets.QWidget):
         num_archs = len(self.cpu_archs)
         
         if num_archs == 0:
-            return "No architectures detected? Your binaries must be quantum - existing in all states at once!"
+            return "No architectures detected? Binary Ninja is more than just a hex-editor, you know."
         elif num_archs == 1:
             arch_name = next(iter(self.cpu_archs.keys()))
-            return f"100% loyal to {arch_name}! When you find something you like, you stick with it."
+            quotes = [
+                f"100% loyal to {arch_name}! When you find something you like, you stick with it.",
+                f"A pure {arch_name} diet! The CPU architecture equivalent of a foodie with a favorite restaurant.",
+                f"{arch_name} and you - a match made in silicon heaven.",
+                f"The {arch_name} architecture fan club has exactly one member, and it's you!",
+                f"All {arch_name}, all the time. Consistency is the hallmark of expertise.",
+                f"You've got a special relationship with {arch_name}. It's not just an architecture, it's a lifestyle."
+            ]
+            return random.choice(quotes)
         elif num_archs == 2:
-            return "Two architectures - keeping one foot in each world. Perfectly balanced, as all things should be."
+            archs = list(self.cpu_archs.keys())
+            quotes = [
+                "Two architectures - keeping one foot in each world. Perfectly balanced, as all things should be.",
+                f"Splitting your time between {archs[0]} and {archs[1]}. Don't let them catch you stepping out!",
+                f"{archs[0]} vs {archs[1]} - the eternal debate continues in your binary collection.",
+                "Your architecture graph looks like a digital mullet: business in the front, party in the back.",
+                f"A tale of two architectures: {archs[0]} and {archs[1]}. It was the best of code, it was the worst of code..."
+            ]
+            return random.choice(quotes)
         elif num_archs >= 3:
-            return f"With {num_archs} different architectures, you're basically the United Nations of binary analysis!"
+            # Get the top architecture
+            top_arch = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)[0][0]
+            quotes = [
+                f"With {num_archs} different architectures, you're basically the United Nations of binary analysis!",
+                f"Your architecture diversity spans {num_archs} different instruction sets. Impressive!",
+                f"From {top_arch} to {list(self.cpu_archs.keys())[-1]}, your CPU tastes are remarkably varied.",
+                f"A {num_archs}-architecture polyglot! The Rosetta Stone of the binary world.",
+                f"Your favorite? {top_arch}. But you've clearly got a soft spot for {num_archs-1} others too.",
+                f"You've analyzed {num_archs} different architectures. That's like speaking {num_archs} different CPU languages!"
+            ]
+            return random.choice(quotes)
         else:
-            return "Your CPU architectures are like your taste in music - eclectic and sophisticated."
+            return "I have no idea how you've managed this."
 
     def getJokeForBinaryStats(self):
         """Get a quote about binary statistics"""
         if self.binary_stats['min'] == self.binary_stats['max']:
-            return "All your binaries are exactly the same size? That's more suspicious than identical twins with the same outfit."
+            quotes = [
+                "All your binaries are exactly the same size? That's more suspicious than identical twins with the same outfit.",
+                "Same size binaries across the board. Either you're extremely consistent or something fishy is going on...",
+                "Your binaries have found size equilibrium - like a digital zen garden.",
+                f"Every binary is exactly {self.binary_stats['min']:.1f}KB. Coincidence? I think not!",
+                "The binary size inspector called: they want to know how you got them all exactly the same size."
+            ]
+            return random.choice(quotes)
         
         size_ratio = self.binary_stats['max'] / max(1, self.binary_stats['min'])
         
         if size_ratio > 100:
-            return f"Your largest binary is {size_ratio:.1f}x bigger than your smallest. That's like comparing a house cat to a tiger!"
+            quotes = [
+                f"Your largest binary is {size_ratio:.1f}x bigger than your smallest. That's like comparing uhh, something huge to something tiny.",
+                f"From tiny {self.binary_stats['min']:.1f}KB to whopping {self.binary_stats['max']:.1f}KB - that's a {size_ratio:.1f}x range!",
+                f"Talk about size diversity! Your binaries range from microbe to whale ({size_ratio:.1f}x difference).",
+                f"The binary size spectrum in your collection spans {size_ratio:.1f}x from smallest to largest. Impressive range!",
+                f"Your binaries have serious size inequality issues - a {size_ratio:.1f}x gap between the haves and have-nots."
+            ]
+            return random.choice(quotes)
         elif size_ratio > 10:
-            return f"From {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB - you've got quite the range there!"
+            quotes = [
+                f"From {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB - you've got quite the range there!",
+                f"Your binary sizes span from {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB - that's versatility!",
+                f"A {size_ratio:.1f}x difference between your smallest and largest binary. Not extreme, but definitely noteworthy.",
+                f"Your average binary weighs in at {self.binary_stats['avg']:.1f}KB - right in the Goldilocks zone!",
+                f"Binary size range: {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB. A healthy ecosystem of code."
+            ]
+            return random.choice(quotes)
         else:
-            return "Your binaries are surprisingly consistent in size. Marie Kondo would be proud of your tidy code."
+            quotes = [
+                "Your binaries are surprisingly consistent in size. Marie Kondo would be proud of your tidy code.",
+                f"With sizes ranging from {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB, your binaries are practically family.",
+                "Your binary size distribution is tighter than a rock band's rhythm section.",
+                f"Binary sizes all within a {size_ratio:.1f}x range - not much for variety, are you?",
+                "Your binaries are like a well-designed set of nesting dolls - consistently proportioned.",
+                f"Average size: {self.binary_stats['avg']:.1f}KB. Remarkably consistent across the board!"
+            ]
+            return random.choice(quotes)
 
     def getQuoteForStaticBinaries(self):
         """Get a quote about static vs dynamic binaries"""
@@ -1051,18 +1225,53 @@ class BNWrappedWidget(QtWidgets.QWidget):
         total = static_count + dynamic_count
         
         if total == 0:
-            return "No binaries analyzed yet? The static vs dynamic debate awaits you!"
+            quotes = [
+                "No binaries analyzed yet? The static vs dynamic debate awaits you!",
+                "Static or dynamic, that is the question... that you haven't answered yet.",
+                "The static/dynamic scoreboard is empty. Time to start analyzing!"
+            ]
+            return random.choice(quotes)
         
         static_percentage = (static_count / total * 100) if total > 0 else 0
         
         if static_percentage > 80:
-            return "You're a static linking enthusiast! Your binaries are self-contained universes."
+            quotes = [
+                "You're a static linking enthusiast! Your binaries are self-contained universes.",
+                f"Static linking at {static_percentage:.1f}%! You really don't trust those system libraries, do you?",
+                "Your binaries are like preppers - they've got everything they need packed inside.",
+                f"With {static_count} static binaries, you're firmly in the 'package everything' camp.",
+                "Static binaries dominate your collection. No dependency drama for you!",
+                f"You're all about that static life: {static_percentage:.1f}% of your binaries are fully self-contained."
+            ]
+            return random.choice(quotes)
         elif static_percentage > 50:
-            return "You prefer independence - most of your binaries are statically linked."
+            quotes = [
+                "You prefer independence - most of your binaries are statically linked.",
+                f"Slightly favoring static binaries ({static_percentage:.1f}%) - a cautious approach to dependencies.",
+                f"Static wins over dynamic by {static_count} to {dynamic_count}. A narrow victory for self-sufficiency!",
+                "Your binaries lean toward self-reliance, but you're not completely against sharing libraries.",
+                f"With {static_percentage:.1f}% static binaries, you're mostly avoiding DLL hell."
+            ]
+            return random.choice(quotes)
         elif static_percentage > 20:
-            return "A healthy mix of static and dynamic binaries - flexibility is your forte."
+            quotes = [
+                "A few static but mostly dynamic, I see.",
+                f"Balanced approach: {static_count} static and {dynamic_count} dynamic binaries.",
+                "Your static/dynamic distribution shows you appreciate both independence and efficiency.",
+                f"With {static_percentage:.1f}% static binaries, you've found the middle path between isolation and integration.",
+                "Some static, some dynamic - your binaries reflect a pragmatic approach to dependencies."
+            ]
+            return random.choice(quotes)
         else:
-            return "You're all about those dynamic dependencies. Sharing is caring!"
+            quotes = [
+                "You're all about those dynamic dependencies. Sharing is caring!",
+                f"Dynamic linking enthusiast! {dynamic_count} of your {total} binaries share libraries.",
+                "Your binaries are social creatures - they love sharing system libraries!",
+                f"Only {static_percentage:.1f}% static binaries? You must really trust your runtime environment.",
+                "Minimalist binaries are your style - why package what you can dynamically link?",
+                f"With {dynamic_count} dynamic binaries, you're optimizing for size and update flexibility."
+            ]
+            return random.choice(quotes)
     
     def getQuote(self):
         """Get a random quote from all categories"""
@@ -1075,8 +1284,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
         ]
         return random.choice(quotes)
 
-def launchBNWrapped(bv):
+def launchBNWrapped(context):
     # Get the actual recent files from settings
+    global widget
     recent_files = QtCore.QSettings().value("ui/recentFiles", [], type=list)
     
     # Create a splash screen while loading
@@ -1094,11 +1304,13 @@ def launchBNWrapped(bv):
     splash.show()
     QtWidgets.QApplication.processEvents()
     
-    # Create widget but don't show splash.finish yet
+    # Create widget but don't close splash yet - we'll enforce a minimum display time
     widget = BNWrappedWidget(recent_files, splash)
     widget.resize(800, 600)
     widget.show()
-    bv.user_data = widget
+    
+    # Enforce a minimum splash screen display time of 3 seconds
+    # This will be handled in the BNWrappedWidget's initialization
     
 def createSplashImage():
     """Create a stylish splash screen image"""
@@ -1155,10 +1367,11 @@ def createSplashImage():
     
     return pixmap
 
-PluginCommand.register("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files", launchBNWrapped)
+from binaryninjaui import UIAction, UIActionHandler, Menu
 
+# Register the UIAction
+UIAction.registerAction("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files")
+UIActionHandler.globalActions().bindAction("Binja Wrapped", UIAction(launchBNWrapped))
 
-
-
-
-
+# Add to the Plugin Menu
+Menu.mainMenu("Plugins").addAction("Binja Wrapped", "BNWrapped")
