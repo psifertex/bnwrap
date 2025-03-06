@@ -787,7 +787,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Get the total height needed
         header_height = 140  # Space for title and timestamp
         footer_height = 60   # Space for quote
-        chart_height = sum(chart[1].height() for _, chart in charts)
+        chart_height = sum(chart.height() for _, chart in charts)
         spacing = 20 * (len(charts) - 1)  # Space between charts
 
         total_height = header_height + chart_height + spacing + footer_height
@@ -812,19 +812,24 @@ class BNWrappedWidget(QtWidgets.QWidget):
             f"{self.user_name}'s Binary Ninja Wrapped"
         )
 
-        # Draw timestamp
-        if self.timestamp > 0:
-            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            timestamp_font = QtGui.QFont()
-            timestamp_font.setPointSize(10)
-            timestamp_font.setItalic(True)
-            painter.setFont(timestamp_font)
-            painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
-            painter.drawText(
-                QtCore.QRect(0, 70, max_width, 20),
-                QtCore.Qt.AlignmentFlag.AlignCenter,
-                f"Stats generated: {timestamp_str}"
-            )
+        # Draw a quote at the top
+        joke = self.getJokeForStats()
+        joke_font = QtGui.QFont()
+        joke_font.setPointSize(12)
+        joke_font.setItalic(True)
+        painter.setFont(joke_font)
+        painter.setPen(QtCore.Qt.GlobalColor.white)
+
+        # Draw green box for the joke
+        joke_rect = QtCore.QRect(20, 70, max_width - 40, 20)
+        painter.fillRect(joke_rect, QtGui.QColor("#1DB954"))
+
+        # Draw the joke text
+        painter.drawText(
+            joke_rect,
+            QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
+            joke
+        )
 
         # Draw each chart
         y_pos = header_height
@@ -836,10 +841,24 @@ class BNWrappedWidget(QtWidgets.QWidget):
             painter.drawPixmap(x_pos, y_pos, chart)
 
             # Move down for the next chart
-            y_pos += chart.height() + 20
+            y_pos += chart.height()
+
+        # Draw timestamp
+        if self.timestamp > 0:
+            timestamp_str = datetime.datetime.fromtimestamp(self.timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            timestamp_font = QtGui.QFont()
+            timestamp_font.setPointSize(10)
+            timestamp_font.setItalic(True)
+            painter.setFont(timestamp_font)
+            painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
+            painter.drawText(
+                QtCore.QRect(20, total_height - footer_height - 40, max_width - 40, footer_height - 50),
+                QtCore.Qt.AlignmentFlag.AlignCenter,
+                f"Stats generated: {timestamp_str}"
+            )
 
         # Draw a quote at the bottom
-        quote = self.getJoke()
+        quote = self.getQuote()
         quote_font = QtGui.QFont()
         quote_font.setPointSize(12)
         quote_font.setItalic(True)
