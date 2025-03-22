@@ -7,6 +7,9 @@ import datetime
 import getpass
 import platform
 import pwd
+import tempfile
+import urllib.parse
+import hashlib
 from binaryninja import load, SymbolType, user_directory
 from binaryninja.log import log as bnlog
 from binaryninja.log import LogLevel
@@ -30,6 +33,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.splash_start_time = datetime.datetime.now()  # Track when the splash was shown
         self.user_name = self.get_user_name()  # Get the user's name
         self.current_tab_index = 0  # Track the current tab for custom quotes
+        self.year = datetime.datetime.now().year  # Current year for display
+        
+        # Initialize the file analysis cache
+        self.initializeCache()
         
         # Initialize UI with placeholder content
         self.initUI(True)
@@ -69,27 +76,68 @@ class BNWrappedWidget(QtWidgets.QWidget):
             return "Binary Ninja User"
 
     def skimFile(self, file_path):
-        # Stub: skim the file for relevant information
+        """Analyze a file, using cache if the SHA256 hash matches"""
+        # Initialize result structure
         result = {}
         result['file_formats'] = ''
         result['arch'] = ''
         result['size'] = 0
         result['num_imports'] = 0
-        # skip files that don't exist or are directories:
+        
+        # Skip files that don't exist or are directories
         if not os.path.exists(file_path) or os.path.isdir(file_path):
             return result
-        bnlog(LogLevel.InfoLog, "Scanning file: " + file_path)
-        with load(file_path, update_analysis=False) as bv:
-            bv.set_analysis_hold(True)
-            result['file_formats'] = bv.view_type
-            result['arch'] = bv.arch.name
-            result['size'] = os.path.getsize(file_path) / 1024
-            # TODO: Handle fat MachO files better here
-            num_imports = len(bv.get_symbols_of_type(SymbolType.ImportAddressSymbol))
-            result['num_imports'] = num_imports
-            # Determine if binary is statically compiled based on import count
-            result['is_static'] = num_imports <= 5
-            bnlog(LogLevel.DebugLog, f"File: {file_path}, Format: {result['file_formats']}, Arch: {result['arch']}, Size: {result['size']} KB, Imports: {num_imports}")
+            
+        # Compute file hash for cache lookup
+        file_hash = self.getFileHash(file_path)
+        if not file_hash:
+            # If we can't compute the hash, just analyze the file directly
+            return self._analyzeFile(file_path)
+            
+        # Check if we have a cached result with matching hash
+        if file_path in self.cache and self.cache[file_path].get('hash') == file_hash:
+            bnlog(LogLevel.InfoLog, f"Using cached analysis for: {file_path}")
+            return self.cache[file_path]['result']
+            
+        # If not cached or hash doesn't match, analyze the file
+        bnlog(LogLevel.InfoLog, f"Analyzing file: {file_path}")
+        result = self._analyzeFile(file_path)
+        
+        # Cache the result with the hash
+        self.cache[file_path] = {
+            'hash': file_hash,
+            'result': result,
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        
+        # Save the updated cache
+        self.saveCache()
+        
+        return result
+        
+    def _analyzeFile(self, file_path):
+        """Perform actual file analysis (no caching)"""
+        result = {}
+        result['file_formats'] = ''
+        result['arch'] = ''
+        result['size'] = 0
+        result['num_imports'] = 0
+        
+        try:
+            with load(file_path, update_analysis=False) as bv:
+                bv.set_analysis_hold(True)
+                result['file_formats'] = bv.view_type
+                result['arch'] = bv.arch.name
+                result['size'] = os.path.getsize(file_path) / 1024
+                # TODO: Handle fat MachO files better here
+                num_imports = len(bv.get_symbols_of_type(SymbolType.ImportAddressSymbol))
+                result['num_imports'] = num_imports
+                # Determine if binary is statically compiled based on import count
+                result['is_static'] = num_imports <= 5
+                bnlog(LogLevel.DebugLog, f"File: {file_path}, Format: {result['file_formats']}, Arch: {result['arch']}, Size: {result['size']} KB, Imports: {num_imports}")
+        except Exception as e:
+            bnlog(LogLevel.ErrorLog, f"Error analyzing {file_path}: {str(e)}")
+            
         return result
 
     def showProgressDialog(self):
@@ -208,7 +256,47 @@ class BNWrappedWidget(QtWidgets.QWidget):
         dialog.close()
         self.updateUI()
     
-    # Caching functionality removed
+    def initializeCache(self):
+        """Initialize the file analysis cache system"""
+        self.cache_dir = os.path.join(user_directory(), "bnwrapped_cache")
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+        self.cache = {}
+        
+        # Load cache from disk if it exists
+        cache_file = os.path.join(self.cache_dir, "analysis_cache.json")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r') as f:
+                    self.cache = json.load(f)
+            except:
+                bnlog(LogLevel.WarningLog, "Failed to load cache file, creating new cache")
+                self.cache = {}
+    
+    def saveCache(self):
+        """Save the analysis cache to disk"""
+        cache_file = os.path.join(self.cache_dir, "analysis_cache.json")
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(self.cache, f)
+        except:
+            bnlog(LogLevel.WarningLog, "Failed to save cache file")
+    
+    def getFileHash(self, file_path):
+        """Compute SHA256 hash of a file"""
+        try:
+            if not os.path.exists(file_path) or os.path.isdir(file_path):
+                return None
+                
+            sha256_hash = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                # Read in chunks to handle large files efficiently
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            return sha256_hash.hexdigest()
+        except:
+            bnlog(LogLevel.WarningLog, f"Failed to compute hash for {file_path}")
+            return None
     
     def computeStats(self, progress_dialog=None):
         """Compute statistics with optional progress dialog"""
@@ -332,6 +420,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Add button container at the bottom
         buttonLayout = QtWidgets.QHBoxLayout()
+        socialButtonLayout = QtWidgets.QHBoxLayout()
         
         # Style for all buttons
         buttonStyle = """
@@ -347,6 +436,32 @@ class BNWrappedWidget(QtWidgets.QWidget):
             }
         """
         
+        # Style for social media buttons
+        socialButtonStyle = """
+            QPushButton {
+                background-color: #1DA1F2;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0c85d0;
+            }
+            QPushButton#mastodon {
+                background-color: #6364FF;
+            }
+            QPushButton#mastodon:hover {
+                background-color: #5253ee;
+            }
+            QPushButton#linkedin {
+                background-color: #0077B5;
+            }
+            QPushButton#linkedin:hover {
+                background-color: #006396;
+            }
+        """
+        
         # Add export combined button
         self.exportButton = QtWidgets.QPushButton("Export Combined Image", self)
         self.exportButton.clicked.connect(self.exportCombinedImage)
@@ -359,12 +474,32 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.exportAllButton.setStyleSheet(buttonStyle)
         buttonLayout.addWidget(self.exportAllButton)
         
+        # Add social media share buttons
+        self.shareTwitterButton = QtWidgets.QPushButton("Share to Twitter", self)
+        self.shareTwitterButton.clicked.connect(self.shareToTwitter)
+        self.shareTwitterButton.setStyleSheet(socialButtonStyle)
+        socialButtonLayout.addWidget(self.shareTwitterButton)
+        
+        self.shareMastodonButton = QtWidgets.QPushButton("Share to Mastodon", self)
+        self.shareMastodonButton.setObjectName("mastodon")
+        self.shareMastodonButton.clicked.connect(self.shareToMastodon)
+        self.shareMastodonButton.setStyleSheet(socialButtonStyle)
+        socialButtonLayout.addWidget(self.shareMastodonButton)
+        
+        self.shareLinkedInButton = QtWidgets.QPushButton("Share to LinkedIn", self)
+        self.shareLinkedInButton.setObjectName("linkedin")
+        self.shareLinkedInButton.clicked.connect(self.shareToLinkedIn)
+        self.shareLinkedInButton.setStyleSheet(socialButtonStyle)
+        socialButtonLayout.addWidget(self.shareLinkedInButton)
+        
         # Add close button
         self.closeButton = QtWidgets.QPushButton("Close", self)
         self.closeButton.clicked.connect(self.close)
         self.closeButton.setStyleSheet(buttonStyle)
         buttonLayout.addWidget(self.closeButton)
         
+        # Add both button layouts to the main layout
+        layout.addLayout(socialButtonLayout)
         layout.addLayout(buttonLayout)
         
     def resizeEvent(self, event):
@@ -1013,7 +1148,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Create a new image with the right dimensions
         combined = QtGui.QPixmap(total_width, total_height)
-        combined.fill(QtGui.QColor("#191414"))  # Dark background
+        combined.fill(QtGui.QColor("#2D2D2D"))  # Lighter background to make BN logo pop
         
         # Paint everything onto the combined image
         painter = QtGui.QPainter(combined)
@@ -1563,6 +1698,269 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 message = f"Successfully exported {successfully_saved} images to:\n{directory}\nFailed to save HTML summary."
                 
             QtWidgets.QMessageBox.information(self, "Export Complete", message)
+            
+    def shareToTwitter(self):
+        """Share stats and image to Twitter"""
+        # First, save the combined image to a temporary location
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, "bn_wrapped_share.png")
+        
+        # Generate combined image
+        chart_pixmaps = [
+            self.generateFileFormatImage(),
+            self.generateCPUArchImage(),
+            self.generateBinaryStatsImage(),
+            self.generateStaticBinariesImage()
+        ]
+        
+        # Create a combined image with lighter background
+        combined = self.createCombinedImage(chart_pixmaps, background_color="#2D2D2D")
+        
+        # Save the image for sharing
+        if combined and combined.save(temp_file, "PNG"):
+            # Get a quote to share
+            quote = self.getQuote()
+            
+            # Encode the text for URL
+            encoded_text = urllib.parse.quote(f"My Binary Ninja Wrapped stats: {quote} #BinaryNinjaWrapped")
+            
+            # Show dialog to let user know what's happening
+            msg = QtWidgets.QMessageBox(self)
+            msg.setWindowTitle("Share to Twitter")
+            msg.setText("The combined image has been saved and will open in your browser.<br><br>You can attach the image from:<br>" + temp_file)
+            msg.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+            
+            if msg.exec() == QtWidgets.QMessageBox.StandardButton.Ok:
+                # Open Twitter with pre-filled text
+                twitter_url = f"https://twitter.com/intent/tweet?text={encoded_text}"
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl(twitter_url))
+    
+    def shareToMastodon(self):
+        """Share stats and image to Mastodon"""
+        # First, save the combined image to a temporary location
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, "bn_wrapped_share.png")
+        
+        # Generate combined image
+        chart_pixmaps = [
+            self.generateFileFormatImage(),
+            self.generateCPUArchImage(),
+            self.generateBinaryStatsImage(),
+            self.generateStaticBinariesImage()
+        ]
+        
+        # Create a combined image with lighter background
+        combined = self.createCombinedImage(chart_pixmaps, background_color="#2D2D2D")
+        
+        # Save the image for sharing
+        if combined and combined.save(temp_file, "PNG"):
+            # Get a quote to share
+            quote = self.getQuote()
+            
+            # Prompt user for their Mastodon instance
+            instance, ok = QtWidgets.QInputDialog.getText(
+                self, "Mastodon Instance", 
+                "Enter your Mastodon instance URL (e.g., mastodon.social):"
+            )
+            
+            if ok and instance:
+                # Encode the text for URL
+                encoded_text = urllib.parse.quote(f"My Binary Ninja Wrapped stats: {quote} #BinaryNinjaWrapped")
+                
+                # Show dialog to let user know what's happening
+                msg = QtWidgets.QMessageBox(self)
+                msg.setWindowTitle("Share to Mastodon")
+                msg.setText("The combined image has been saved and will open in your browser.<br><br>You can attach the image from:<br>" + temp_file)
+                msg.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+                
+                if msg.exec() == QtWidgets.QMessageBox.StandardButton.Ok:
+                    # Open Mastodon compose page with pre-filled text
+                    mastodon_url = f"https://{instance}/share?text={encoded_text}"
+                    QtGui.QDesktopServices.openUrl(QtCore.QUrl(mastodon_url))
+    
+    def shareToLinkedIn(self):
+        """Share stats and image to LinkedIn"""
+        # First, save the combined image to a temporary location
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, "bn_wrapped_share.png")
+        
+        # Generate combined image
+        chart_pixmaps = [
+            self.generateFileFormatImage(),
+            self.generateCPUArchImage(),
+            self.generateBinaryStatsImage(),
+            self.generateStaticBinariesImage()
+        ]
+        
+        # Create a combined image with lighter background
+        combined = self.createCombinedImage(chart_pixmaps, background_color="#2D2D2D")
+        
+        # Save the image for sharing
+        if combined and combined.save(temp_file, "PNG"):
+            # Get a quote to share
+            quote = self.getQuote()
+            
+            # Prepare text to share
+            share_text = f"My Binary Ninja Wrapped stats: {quote} #BinaryNinjaWrapped"
+            
+            # Show dialog to let user know what's happening
+            msg = QtWidgets.QMessageBox(self)
+            msg.setWindowTitle("Share to LinkedIn")
+            msg.setText("The combined image has been saved and will open in your browser.<br><br>You can attach the image from:<br>" + temp_file)
+            msg.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel)
+            
+            if msg.exec() == QtWidgets.QMessageBox.StandardButton.Ok:
+                # LinkedIn only supports the URL parameter for share-offsite
+                # The user will need to manually add the text
+                
+                # Simple URL format for LinkedIn
+                linkedin_url = "https://www.linkedin.com/sharing/share-offsite/?url=https://binary.ninja"
+                
+                # Open LinkedIn sharing dialog
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl(linkedin_url))
+    
+    def createCombinedImage(self, chart_pixmaps, background_color="#2D2D2D"):
+        """Helper method to create a combined image for social media sharing"""
+        if not chart_pixmaps:
+            return None
+            
+        titles = [
+            "File Format Breakdown",
+            "CPU Architectures",
+            "Binary Statistics",
+            "Static Binaries"
+        ]
+        
+        # Grid layout configuration
+        columns = 2  # Number of columns in the grid
+        rows = (len(chart_pixmaps) + columns - 1) // columns  # Ceiling division to get number of rows
+        
+        # Get typical dimensions of the charts
+        chart_width = max(pixmap.width() for pixmap in chart_pixmaps)
+        chart_height = max(pixmap.height() for pixmap in chart_pixmaps)
+        
+        # Grid spacing
+        horizontal_spacing = 40
+        vertical_spacing = 40
+        
+        # Size of the quotes
+        quote_height = 60
+        
+        # Check if wordmark exists to adjust header height
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
+        
+        # Calculate total dimensions for the grid layout
+        header_height = 180 if not wordmark.isNull() else 150  # Space for wordmark, title and timestamp
+        footer_height = 40   # Extra space at the bottom
+        
+        # Total width: margin + (chart_width + spacing) * columns - spacing (no spacing after last column) + margin
+        total_width = 60 + (chart_width + horizontal_spacing) * columns - horizontal_spacing + 60
+        
+        # Total height: header + (chart_height + quote_height + spacing) * rows - spacing (no spacing after last row) + footer
+        total_height = header_height + (chart_height + quote_height + vertical_spacing) * rows - vertical_spacing + footer_height
+        
+        # Create a new image with the right dimensions
+        combined = QtGui.QPixmap(total_width, total_height)
+        combined.fill(QtGui.QColor(background_color))  # Lighter background to make BN logo pop
+        
+        # Paint everything onto the combined image
+        painter = QtGui.QPainter(combined)
+        
+        # Add the same content as in exportCombinedImage
+        # Use the wordmark at the top
+        if not wordmark.isNull():
+            logo_x = (total_width - wordmark.width()) // 2
+            painter.drawPixmap(logo_x, 20, wordmark)
+        
+        # Add a title
+        title_font = QtGui.QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        painter.setFont(title_font)
+        painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
+        
+        title_y = 45 if wordmark.isNull() else 20 + wordmark.height() + 10
+        
+        painter.drawText(
+            QtCore.QRect(0, title_y, total_width, 30),
+            QtCore.Qt.AlignmentFlag.AlignCenter,
+            f"{self.user_name}'s Binary Ninja Wrapped {self.year}"
+        )
+        
+        # Add timestamp
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_font = QtGui.QFont()
+        timestamp_font.setPointSize(12)
+        timestamp_font.setItalic(True)
+        painter.setFont(timestamp_font)
+        painter.setPen(QtGui.QColor("#1DB954"))  # Spotify green
+        
+        # Adjust the timestamp position - it should be below the title
+        timestamp_y = 120 if not wordmark.isNull() else 80
+        
+        painter.drawText(
+            QtCore.QRect(0, timestamp_y, total_width, 20),
+            QtCore.Qt.AlignmentFlag.AlignCenter,
+            f"Generated: {current_time}"
+        )
+        
+        # Draw each chart in a grid layout
+        for i, pixmap in enumerate(chart_pixmaps):
+            if not pixmap:
+                continue
+                
+            # Calculate grid position
+            col = i % columns
+            row = i // columns
+            
+            # Calculate pixel position for this chart
+            x = 60 + col * (chart_width + horizontal_spacing)
+            y = header_height + row * (chart_height + quote_height + vertical_spacing)
+            
+            # Draw the chart
+            painter.drawPixmap(x, y, pixmap)
+            
+            # Add a quote below the chart
+            quote = ""
+            if "File Format" in titles[i]:
+                quote = self.getJokeForFileFormats()
+            elif "CPU" in titles[i]:
+                quote = self.getJokeForArchitectures()
+            elif "Binary Statistics" in titles[i]:
+                quote = self.getJokeForBinaryStats()
+            elif "Static" in titles[i]:
+                quote = self.getQuoteForStaticBinaries()
+            
+            # Set up the font for the quote
+            quote_font = QtGui.QFont()
+            quote_font.setPointSize(10)
+            quote_font.setItalic(True)
+            painter.setFont(quote_font)
+            
+            # Determine the color - use a color from the chart to make it look nice
+            if i < len(self.get_spotify_colors()):
+                quote_color = self.get_spotify_colors()[i]
+            else:
+                quote_color = "#1DB954"  # Default to Spotify green
+                
+            painter.setPen(QtGui.QColor(quote_color))
+            
+            # The quote rectangle position
+            quote_x = x
+            quote_y = y + chart_height + 10
+            quote_width = chart_width
+            
+            # Draw the quote with word wrapping
+            painter.drawText(
+                QtCore.QRect(quote_x, quote_y, quote_width, quote_height),
+                QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
+                quote
+            )
+        
+        # End painting
+        painter.end()
+        
+        return combined
 
     def getJokeForStats(self):
         """Get a quote about overall statistics"""
