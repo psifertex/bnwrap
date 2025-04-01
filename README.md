@@ -1,4 +1,4 @@
-# Binary Ninja Wrapped (v0.11)
+# Binary Ninja Wrapped (v0.12)
 Author: **Jordan Wiens**
 
 __
