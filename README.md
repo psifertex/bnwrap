@@ -15,6 +15,20 @@ Binary Ninja Wrapped provides a stylish visualization of your reverse engineerin
 
 Each chart comes with personalized, sometimes humorous commentary on your binary analysis habits.
 
+## Frequently Asked Questions
+
+**Q: Is this a joke?**
+
+**A:** Well, yes. I mean, it's intended to be a non-serious, funny plugin.
+
+**Q: So it doesn't actually work?**
+
+**A:** Oh no, it's very much a real plugin that will really do what it says and involves several thousand lines of vibe coding.
+
+**Q: But why was it released on April 1 if it's a prank?**
+
+**A:** You got the part where it was supposed to be non-serious and funny, right?
+
 ## Features
 
 - **Interactive UI**: Browse different stats through an intuitive tabbed interface
@@ -27,9 +41,9 @@ Each chart comes with personalized, sometimes humorous commentary on your binary
 1. Install via the Plugin Manager! 
 1. Alternatively, clone this repository into your Binary Ninja plugins directory:
    ```
-   cd ~/.binaryninja/plugins/  # Linux/macOS
-   # or
-   cd %APPDATA%\Binary Ninja\plugins\  # Windows
+   cd ~/.binaryninja/plugins/                       # Linux
+   cd ~/Library/Application\ Support/Binary\ Ninja/ # macOS
+   cd %APPDATA%\Binary Ninja\plugins                # Windows
    git clone https://github.com/vector35/bnwrap.git
    ```
 
