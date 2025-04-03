@@ -1,4 +1,4 @@
-# Binary Ninja Wrapped (v1.00)
+# Binary Ninja Wrapped (v1.01)
 
 A fun "Spotify Wrapped" style visualization tool for your Binary Ninja usage.
 
