@@ -591,8 +591,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.overlay.hide()
             self.overlay.deleteLater()
             delattr(self, 'overlay')
-            # Restore normal resize handling
-            self.resizeEvent = QtWidgets.QWidget.resizeEvent
 
     def createStatTab(self, title, imageGenFunc):
         widget = QtWidgets.QWidget()
