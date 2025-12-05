@@ -833,8 +833,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.background_colors = self.generate_random_backgrounds()
             
         background_color = self.background_colors[1]  # Use the color for tab 1
-        
-        fig, ax = plt.subplots(facecolor=background_color)
+
+        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=1)  # Use File Formats tab-specific colors
         # Choose text color based on background brightness
@@ -949,8 +949,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.background_colors = self.generate_random_backgrounds()
             
         background_color = self.background_colors[2]  # Use the color for tab 2
-        
-        fig, ax = plt.subplots(facecolor=background_color)
+
+        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=2)  # Use CPU Architecture tab-specific colors
         bars = ax.bar(
@@ -1007,8 +1007,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.background_colors = self.generate_random_backgrounds()
             
         background_color = self.background_colors[3]  # Use the color for tab 3
-        
-        fig, ax = plt.subplots(facecolor=background_color)
+
+        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=3)  # Use Binary Statistics tab-specific colors
         bars = ax.bar(
@@ -1070,8 +1070,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.background_colors = self.generate_random_backgrounds()
             
         background_color = self.background_colors[4]  # Use the color for tab 4
-        
-        fig, ax = plt.subplots(facecolor=background_color)
+
+        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=4)  # Use Static Binaries tab-specific colors
         bars = ax.bar(
@@ -1125,7 +1125,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
 
     def figureToPixmap(self, fig):
         buf = io.BytesIO()
-        fig.savefig(buf, format='png')
+        # Use tight_layout to prevent label overflow and bbox_inches to ensure nothing is clipped
+        fig.tight_layout()
+        fig.savefig(buf, format='png', bbox_inches='tight')
         plt.close(fig)
         buf.seek(0)
         img = QtGui.QImage()
@@ -2312,7 +2314,7 @@ def launchBNWrapped(context):
     
     # Create widget but don't close splash yet - we'll enforce a minimum display time
     widget = BNWrappedWidget(recent_files, splash)
-    widget.resize(800, 600)
+    widget.resize(1000, 800)
     widget.show()
     
     # Enforce a minimum splash screen display time of 3 seconds
