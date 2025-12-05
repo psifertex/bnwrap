@@ -377,7 +377,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
             # Update stats
             self.count += 1
             self.file_formats[result['file_formats']] = self.file_formats.get(result['file_formats'], 0) + 1
-            self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
+            # Only count architecture if it's not empty
+            if result['arch']:
+                self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
             total_size += result['size']
             self.binary_stats['min'] = min(self.binary_stats['min'], result['size'])
             self.binary_stats['max'] = max(self.binary_stats['max'], result['size'])
@@ -757,7 +759,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             html += f'<div class="stat">Path: {os.path.basename(self.biggest_binary["path"])}</div>'
             html += f'<div class="stat">Size: {self.biggest_binary["size"]:.2f} KB</div>'
             html += f'<div class="stat">Format: {self.biggest_binary["format"]}</div>'
-            html += f'<div class="stat">Architecture: {self.biggest_binary["arch"]}</div>'
+            arch_display = self.biggest_binary["arch"] if self.biggest_binary["arch"] else "Unknown"
+            html += f'<div class="stat">Architecture: {arch_display}</div>'
         
         html += f'<h2>Static Binaries</h2>'
         html += f'<div class="stat">Static: {self.static_binaries_count["static"]}</div>'
@@ -1687,8 +1690,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 binary_name = os.path.basename(self.biggest_binary["path"])
                 binary_size = self.biggest_binary["size"]
                 binary_format = self.biggest_binary["format"]
-                binary_arch = self.biggest_binary["arch"]
-                
+                binary_arch = self.biggest_binary["arch"] if self.biggest_binary["arch"] else "Unknown"
+
                 html += f"""
                         <h3>Biggest Binary</h3>
                         <div class="stat-item">Path: <span class="stat-value">{binary_name}</span></div>
