@@ -241,12 +241,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
         shortcut.activated.connect(dialog.cancel)
         
         dialog.setStyleSheet("""
-            QProgressDialog {
-                background-color: #191414;
-                color: white;
-                border: 2px solid #1DB954;
-                border-radius: 10px;
-            }
             QPushButton {
                 background-color: #1DB954;
                 color: white;
@@ -258,7 +252,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 background-color: #1ED760;
             }
             QLabel {
-                color: white;
                 font-size: 14px;
             }
         """)
