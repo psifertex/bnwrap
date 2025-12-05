@@ -1174,29 +1174,29 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Size of the quotes
         quote_height = 60
-        
+
         # Check if wordmark exists to adjust header height
-        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
-        
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-dark.png")
+
         # Calculate total dimensions for the grid layout
         header_height = 180 if not wordmark.isNull() else 150  # Space for wordmark, title and timestamp
         footer_height = 40   # Extra space at the bottom
-        
+
         # Total width: margin + (chart_width + spacing) * columns - spacing (no spacing after last column) + margin
         total_width = 60 + (chart_width + horizontal_spacing) * columns - horizontal_spacing + 60
-        
+
         # Total height: header + (chart_height + quote_height + spacing) * rows - spacing (no spacing after last row) + footer
         total_height = header_height + (chart_height + quote_height + vertical_spacing) * rows - vertical_spacing + footer_height
-        
+
         # Create a new image with the right dimensions
         combined = QtGui.QPixmap(total_width, total_height)
         combined.fill(QtGui.QColor("#2D2D2D"))  # Lighter background to make BN logo pop
-        
+
         # Paint everything onto the combined image
         painter = QtGui.QPainter(combined)
-        
+
         # Use the wordmark at the top
-        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-dark.png")
         if not wordmark.isNull():
             # Scale the wordmark to fit nicely
             wordmark_width = min(300, total_width * 0.6)  # Target width in pixels, not more than 60% of total width
@@ -1887,20 +1887,20 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Size of the quotes
         quote_height = 60
-        
+
         # Check if wordmark exists to adjust header height
-        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-light.png")
-        
+        wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-dark.png")
+
         # Calculate total dimensions for the grid layout
         header_height = 180 if not wordmark.isNull() else 150  # Space for wordmark, title and timestamp
         footer_height = 40   # Extra space at the bottom
-        
+
         # Total width: margin + (chart_width + spacing) * columns - spacing (no spacing after last column) + margin
         total_width = 60 + (chart_width + horizontal_spacing) * columns - horizontal_spacing + 60
-        
+
         # Total height: header + (chart_height + quote_height + spacing) * rows - spacing (no spacing after last row) + footer
         total_height = header_height + (chart_height + quote_height + vertical_spacing) * rows - vertical_spacing + footer_height
-        
+
         # Create a new image with the right dimensions
         combined = QtGui.QPixmap(total_width, total_height)
         combined.fill(QtGui.QColor(background_color))  # Lighter background to make BN logo pop
