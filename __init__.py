@@ -1218,14 +1218,14 @@ class BNWrappedWidget(QtWidgets.QWidget):
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(QtCore.Qt.GlobalColor.white)
-        
+
         # Adjust title position depending on whether wordmark was drawn
         title_y = 80 if not wordmark.isNull() else 40
-        
+
         painter.drawText(
             QtCore.QRect(0, title_y, total_width, 40),
             QtCore.Qt.AlignmentFlag.AlignCenter,
-            f"{self.user_name}'s Wrapped"
+            f"{self.user_name}'s Wrapped {self.year}"
         )
         
         # Draw generation timestamp
@@ -1728,7 +1728,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             </body>
             </html>
             """
-            
+
             # Write the HTML file
             try:
                 with open(html_path, 'w') as f:
@@ -1931,7 +1931,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         painter.drawText(
             QtCore.QRect(0, title_y, total_width, 30),
             QtCore.Qt.AlignmentFlag.AlignCenter,
-            f"{self.user_name}'s Binary Ninja Wrapped {self.year}"
+            f"{self.user_name}'s Wrapped {self.year}"
         )
         
         # Add timestamp
