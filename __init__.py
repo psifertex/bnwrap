@@ -373,9 +373,12 @@ class BNWrappedWidget(QtWidgets.QWidget):
             # Only count architecture if it's not empty
             if result['arch']:
                 self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
-            total_size += result['size']
-            self.binary_stats['min'] = min(self.binary_stats['min'], result['size'])
-            self.binary_stats['max'] = max(self.binary_stats['max'], result['size'])
+
+            # Only include non-empty files in size calculations
+            if result['size'] > 0:
+                total_size += result['size']
+                self.binary_stats['min'] = min(self.binary_stats['min'], result['size'])
+                self.binary_stats['max'] = max(self.binary_stats['max'], result['size'])
             
             # Update static/dynamic binaries count
             if 'is_static' in result and result['is_static']:
