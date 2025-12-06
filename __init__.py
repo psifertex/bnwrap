@@ -6,7 +6,6 @@ import operator
 import datetime
 import getpass
 import platform
-import pwd
 import tempfile
 import urllib.parse
 import hashlib
@@ -116,8 +115,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 # Unix-like systems (macOS, Linux)
                 try:
                     # Try to get the full name from the passwd database
+                    import pwd
                     return pwd.getpwuid(os.getuid())[4].split(',')[0]
-                except (KeyError, IndexError):
+                except (KeyError, IndexError, ImportError):
                     pass
             
             return getpass.getuser()
