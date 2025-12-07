@@ -4,7 +4,7 @@ File analysis and caching for Binary Ninja Wrapped plugin.
 import os
 import json
 import datetime
-from binaryninja import load, SymbolType, user_directory
+from binaryninja import load, SymbolType, user_directory, BinaryViewType, BinaryView, Platform
 
 # Try to import project support
 try:
@@ -70,6 +70,51 @@ def _find_project_for_file(file_path):
                 return None
 
         current_dir = os.path.dirname(current_dir)
+
+    return None
+
+
+def _predict_architecture(file_path, view_type_name=None):
+    """Try to predict the architecture using load settings
+
+    Args:
+        file_path (str): Path to the file to analyze
+        view_type_name (str): Optional view type name from initial analysis
+
+    Returns:
+        str: Predicted architecture name or None if prediction failed
+    """
+    try:
+        # Open the raw file
+        raw_view = BinaryView.open(file_path)
+        if not raw_view:
+            return None
+
+        # Check all available view types for predictions
+        for view_type in BinaryViewType:
+            try:
+                if view_type.is_valid_for_data(raw_view):
+                    # Get load settings - this is where prediction happens
+                    load_settings = view_type.get_load_settings_for_data(raw_view)
+
+                    if load_settings and load_settings.contains("loader.platform"):
+                        platform_name = load_settings.get_string("loader.platform", raw_view)
+                        if platform_name:
+                            # Get the platform object and extract architecture
+                            try:
+                                platform = Platform[platform_name]
+                                if platform and platform.arch:
+                                    arch_name = platform.arch.name
+                                    logger.log_info(f"Predicted architecture for {file_path}: {arch_name} (from {view_type.name})")
+                                    return arch_name
+                            except:
+                                pass
+            except:
+                # Skip view types that throw errors
+                continue
+
+    except Exception as e:
+        logger.log_debug(f"Failed to predict architecture for {file_path}: {e}")
 
     return None
 
@@ -145,9 +190,9 @@ class FileAnalyzer:
             cached_result = self.cache[file_path]['result']
             # Fix old cached entries with empty file_formats or arch
             if 'file_formats' in cached_result and not cached_result['file_formats']:
-                cached_result['file_formats'] = 'Unknown'
+                cached_result['file_formats'] = 'Raw'
             if 'arch' in cached_result and not cached_result['arch']:
-                cached_result['arch'] = 'Unknown'
+                cached_result['arch'] = 'Raw'
             return cached_result
 
         # If not cached or hash doesn't match, analyze the file
@@ -194,8 +239,8 @@ class FileAnalyzer:
             with load(file_path, update_analysis=False) as bv:
                 bv.set_analysis_hold(True)
 
-                result['file_formats'] = bv.view_type if bv.view_type else 'Unknown'
-                result['arch'] = bv.arch.name if bv.arch and bv.arch.name else 'Unknown'
+                result['file_formats'] = bv.view_type if bv.view_type else 'Raw'
+                result['arch'] = bv.arch.name if bv.arch and bv.arch.name else 'Raw'
                 result['size'] = os.path.getsize(file_path) / 1024
                 # TODO: Handle fat MachO files better here
                 num_imports = len(bv.get_symbols_of_type(SymbolType.ImportAddressSymbol))
@@ -208,8 +253,17 @@ class FileAnalyzer:
 
         # Ensure file_formats and arch are never empty
         if not result['file_formats']:
-            result['file_formats'] = 'Unknown'
-        if not result['arch']:
-            result['arch'] = 'Unknown'
+            result['file_formats'] = 'Raw'
+
+        # If architecture is unknown, try to predict it
+        if not result['arch'] or result['arch'] == 'Raw':
+            # Pass the view type name as a hint for prediction
+            view_type_hint = result.get('file_formats', None)
+            predicted_arch = _predict_architecture(file_path, view_type_hint)
+            if predicted_arch:
+                result['arch'] = f"{predicted_arch}*"
+                logger.log_info(f"Using predicted architecture: {result['arch']}")
+            else:
+                result['arch'] = 'Raw'
 
         return result

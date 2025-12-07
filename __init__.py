@@ -50,9 +50,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.count = 0
         self.file_formats = {}
         self.cpu_archs = {}
-        self.binary_stats = {'avg': 0, 'min': 0, 'max': 0}
+        self.binary_stats = {'avg size': 0, 'min size': 0, 'max size': 0, 'projects': 0}
         self.static_binaries_count = {'static': 0, 'dynamic': 0}
         self.biggest_binary = {"path": "", "size": 0, "format": "", "arch": ""}
+        self.project_count = 0
         self.splash = splash  # Store the splash screen reference
         self.splash_start_time = datetime.datetime.now()  # Track when the splash was shown
         self.user_name = get_user_name()  # Get the user's name
@@ -187,22 +188,34 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.count = 0
         self.file_formats = {}
         self.cpu_archs = {}
-        self.binary_stats = {'avg': 0, 'min': float('inf'), 'max': 0}
+        self.binary_stats = {'avg size': 0, 'min size': float('inf'), 'max size': 0, 'projects': 0}
         self.static_binaries_count = {'static': 0, 'dynamic': 0}
         self.biggest_binary = {"path": "", "size": 0, "format": "", "arch": ""}
+        self.project_count = 0
         total_size = 0
         
         # Process each file
         for i, f in enumerate(self.recent_files):
             if progress_dialog and progress_dialog.wasCanceled():
                 break
-                
+
+            # Count project directories separately (.bnpr are directories, not files)
+            if os.path.isdir(f):
+                self.project_count += 1
+                logger.log_debug(f"Counting project/directory: {f}")
+                continue
+
+            # Skip files that don't exist anymore
+            if not os.path.exists(f):
+                logger.log_debug(f"Skipping non-existent file: {f}")
+                continue
+
             # Update progress
             if progress_dialog:
                 progress_dialog.setValue(i)
                 progress_dialog.setLabelText(f"Analyzing: {os.path.basename(f)}")
                 QtWidgets.QApplication.processEvents()
-            
+
             # Process the file
             result = self.file_analyzer.skim_file(f)
             if 'file_formats' not in result or 'arch' not in result or 'size' not in result:
@@ -211,14 +224,25 @@ class BNWrappedWidget(QtWidgets.QWidget):
             # Update stats
             self.count += 1
             # Count file format and architecture (file_analyzer guarantees these are never empty)
-            self.file_formats[result['file_formats']] = self.file_formats.get(result['file_formats'], 0) + 1
-            self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
+            file_format = result['file_formats']
+            arch = result['arch']
+
+            # Extra validation to catch empty strings
+            if not file_format or file_format == '':
+                logger.log_warn(f"Empty file_format detected for {f}, result: {result}")
+                file_format = 'Raw'
+            if not arch or arch == '':
+                logger.log_warn(f"Empty arch detected for {f}, result: {result}")
+                arch = 'Raw'
+
+            self.file_formats[file_format] = self.file_formats.get(file_format, 0) + 1
+            self.cpu_archs[arch] = self.cpu_archs.get(arch, 0) + 1
 
             # Only include non-empty files in size calculations
             if result['size'] > 0:
                 total_size += result['size']
-                self.binary_stats['min'] = min(self.binary_stats['min'], result['size'])
-                self.binary_stats['max'] = max(self.binary_stats['max'], result['size'])
+                self.binary_stats['min size'] = min(self.binary_stats['min size'], result['size'])
+                self.binary_stats['max size'] = max(self.binary_stats['max size'], result['size'])
             
             # Update static/dynamic binaries count
             if 'is_static' in result and result['is_static']:
@@ -237,15 +261,18 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Calculate average
         if self.count > 0:
-            self.binary_stats['avg'] = total_size / self.count
+            self.binary_stats['avg size'] = total_size / self.count
         else:
-            self.binary_stats['min'] = 0
-            
+            self.binary_stats['min size'] = 0
+
+        # Add project count to stats
+        self.binary_stats['projects'] = self.project_count
+
         # If we have no results, use some dummy data
         if not self.file_formats:
             self.file_formats = {'PE': 10, 'ELF': 5, 'Mach-O': 3}
             self.cpu_archs = {'x86': 12, 'ARM': 3, 'MIPS': 1}
-            self.binary_stats = {'avg': 1024, 'min': 512, 'max': 2048}
+            self.binary_stats = {'avg size': 1024, 'min size': 512, 'max size': 2048, 'projects': 3}
             self.static_binaries_count = {'static': 8, 'dynamic': 10}
             self.biggest_binary = {"path": "example.exe", "size": 2048, "format": "PE", "arch": "x86"}
         
@@ -262,7 +289,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         if use_placeholder and not self.file_formats:
             self.file_formats = {'PE': 10, 'ELF': 5, 'Mach-O': 3}
             self.cpu_archs = {'x86': 12, 'ARM': 3, 'MIPS': 1}
-            self.binary_stats = {'avg': 1024, 'min': 512, 'max': 2048}
+            self.binary_stats = {'avg size': 1024, 'min size': 512, 'max size': 2048, 'projects': 3}
             self.static_binaries_count = {'static': 8, 'dynamic': 10}
             
         # Create tabs widget
@@ -275,7 +302,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.statsTextTab = self.createStatsTextTab()
         self.fileFormatTab = self.createStatTab("File Format Breakdown", self.generateFileFormatImage)
         self.cpuArchTab = self.createStatTab("CPU Architectures", self.generateCPUArchImage)
-        self.binaryStatsTab = self.createStatTab("Binary Statistics", self.generateBinaryStatsImage)
+        self.binaryStatsTab = self.createStatTab("Statistics", self.generateBinaryStatsImage)
         self.staticBinariesTab = self.createStatTab("Static Binaries", self.generateStaticBinariesImage)
 
         # Add tabs
@@ -449,7 +476,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.statsTextTab = self.createStatsTextTab()
         self.fileFormatTab = self.createStatTab("File Format Breakdown", self.generateFileFormatImage)
         self.cpuArchTab = self.createStatTab("CPU Architectures", self.generateCPUArchImage)
-        self.binaryStatsTab = self.createStatTab("Binary Statistics", self.generateBinaryStatsImage)
+        self.binaryStatsTab = self.createStatTab("Statistics", self.generateBinaryStatsImage)
         self.staticBinariesTab = self.createStatTab("Static Binaries", self.generateStaticBinariesImage)
         
         self.tabs.addTab(self.statsTextTab, "Stats Summary")
@@ -491,7 +518,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             bg_color = self.get_spotify_colors(tab_index=1)[0]
         elif "CPU" in title:
             bg_color = self.get_spotify_colors(tab_index=2)[0]
-        elif "Binary Statistics" in title:
+        elif "Statistics" in title:
             bg_color = self.get_spotify_colors(tab_index=3)[0]
         elif "Static Binaries" in title:
             bg_color = self.get_spotify_colors(tab_index=4)[0]
@@ -523,7 +550,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             quote = self.getJokeForFileFormats()
         elif "CPU" in title:
             quote = self.getJokeForArchitectures()
-        elif "Binary Statistics" in title:
+        elif "Statistics" in title:
             quote = self.getJokeForBinaryStats()
         elif "Static Binaries" in title:
             quote = self.getQuoteForStaticBinaries()
@@ -591,6 +618,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
             static_count=self.static_binaries_count["static"],
             dynamic_count=self.static_binaries_count["dynamic"],
             static_quote=self.getQuoteForStaticBinaries(),
+            project_count=self.project_count,
+            projects_quote=self.getQuoteForProjects(),
             timestamp=current_time
         )
 
@@ -770,11 +799,14 @@ class BNWrappedWidget(QtWidgets.QWidget):
         archs = self.cpu_archs
         # Sort by value in descending order
         sorted_archs = dict(sorted(archs.items(), key=operator.itemgetter(1), reverse=True))
-        
+
+        # Check if any architectures are predicted (have asterisk)
+        has_predicted = any('*' in arch for arch in sorted_archs.keys())
+
         # Use a random dark background color for the chart
         if not hasattr(self, 'background_colors'):
             self.background_colors = self.generate_random_backgrounds()
-            
+
         background_color = self.background_colors[2]  # Use the color for tab 2
 
         fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
@@ -811,10 +843,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
 
         ax.set_title("CPU Architectures", color=text_color, fontweight='bold', fontsize=20)
         ax.set_facecolor(background_color)  # Use the selected background color
-        
+
         ax.tick_params(axis='x', labelsize=label_fontsize)
         ax.tick_params(axis='y', labelsize=label_fontsize)
-        
+
         # Update spine colors based on background brightness
         ax.spines['bottom'].set_color(text_color)
         ax.spines['top'].set_color(text_color)
@@ -822,27 +854,36 @@ class BNWrappedWidget(QtWidgets.QWidget):
         ax.spines['right'].set_color(text_color)
         ax.tick_params(axis='x', colors=text_color)
         ax.tick_params(axis='y', colors=text_color)
+
+        # Add footnote if there are predicted architectures
+        if has_predicted:
+            fig.text(0.5, 0.02, '* Predicted architecture', ha='center',
+                    fontsize=9, color=text_color, style='italic')
+
         return self.figureToPixmap(fig)
 
     def generateBinaryStatsImage(self):
-        stats = self.binary_stats
+        stats = self.binary_stats.copy()
         # Sort by value in descending order
         sorted_stats = dict(sorted(stats.items(), key=operator.itemgetter(1), reverse=True))
-        
+
         # Use a random dark background color for the chart
         if not hasattr(self, 'background_colors'):
             self.background_colors = self.generate_random_backgrounds()
-            
+
         background_color = self.background_colors[3]  # Use the color for tab 3
 
         fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
-        
-        colors = self.get_spotify_colors(tab_index=3)  # Use Binary Statistics tab-specific colors
+
+        colors = self.get_spotify_colors(tab_index=3)  # Use Statistics tab-specific colors
         bars = ax.bar(
-            sorted_stats.keys(), 
+            sorted_stats.keys(),
             sorted_stats.values(),
             color=colors[:len(sorted_stats)]
         )
+
+        # Use logarithmic scale for better visualization of different magnitudes
+        ax.set_yscale('log')
         
         # Choose text color based on background brightness
         text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(3, False) else 'white'
@@ -867,8 +908,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 fontsize=label_fontsize
             )
 
-        ax.set_title("Binary Statistics", color=text_color, fontweight='bold', fontsize=20)
-        ax.set_ylabel("Size (KB)", color=text_color, fontsize=16)
+        ax.set_title("Statistics", color=text_color, fontweight='bold', fontsize=20)
+        ax.set_ylabel("Value (log scale)", color=text_color, fontsize=16)
         ax.set_facecolor(background_color)  # Use the selected background color
         
         # Make the tick labels larger
@@ -985,7 +1026,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         titles = [
             "File Format Breakdown",
             "CPU Architectures",
-            "Binary Statistics",
+            "Statistics",
             "Static Binaries"
         ]
         
@@ -1076,7 +1117,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 quotes.append(self.getJokeForFileFormats())
             elif "CPU" in title:
                 quotes.append(self.getJokeForArchitectures())
-            elif "Binary Statistics" in title:
+            elif "Statistics" in title:
                 quotes.append(self.getJokeForBinaryStats())
             elif "Static Binaries" in title:
                 quotes.append(self.getQuoteForStaticBinaries())
@@ -1184,8 +1225,8 @@ class BNWrappedWidget(QtWidgets.QWidget):
                     "quote_func": self.getJokeForArchitectures
                 },
                 {
-                    "filename": "binary_statistics.png", 
-                    "title": "Binary Statistics",
+                    "filename": "binary_statistics.png",
+                    "title": "Statistics",
                     "image_func": self.generateBinaryStatsImage,
                     "quote_func": self.getJokeForBinaryStats
                 },
@@ -1544,7 +1585,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         titles = [
             "File Format Breakdown",
             "CPU Architectures",
-            "Binary Statistics",
+            "Statistics",
             "Static Binaries"
         ]
         
@@ -1698,6 +1739,10 @@ class BNWrappedWidget(QtWidgets.QWidget):
     def getQuoteForStaticBinaries(self):
         """Get a quote about static vs dynamic binaries"""
         return quotes.get_static_binaries_quote(self.static_binaries_count)
+
+    def getQuoteForProjects(self):
+        """Get a quote about project usage"""
+        return quotes.get_projects_quote(self.project_count)
     
     def getQuote(self):
         """Get a random quote from all categories"""

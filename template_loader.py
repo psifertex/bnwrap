@@ -36,7 +36,7 @@ def load_template(template_name):
 def render_stats_tab(user_name, stats_quote, file_formats_html, formats_quote,
                      cpu_archs_html, archs_quote, binary_stats_html,
                      biggest_binary_html, static_count, dynamic_count,
-                     static_quote, timestamp):
+                     static_quote, project_count, projects_quote, timestamp):
     """Render the stats tab HTML template
 
     Args:
@@ -51,6 +51,8 @@ def render_stats_tab(user_name, stats_quote, file_formats_html, formats_quote,
         static_count (int): Number of static binaries
         dynamic_count (int): Number of dynamic binaries
         static_quote (str): Quote about static binaries
+        project_count (int): Number of projects
+        projects_quote (str): Quote about projects
         timestamp (str): Generation timestamp
 
     Returns:
@@ -69,6 +71,8 @@ def render_stats_tab(user_name, stats_quote, file_formats_html, formats_quote,
         static_count=static_count,
         dynamic_count=dynamic_count,
         static_quote=static_quote,
+        project_count=project_count,
+        projects_quote=projects_quote,
         timestamp=timestamp
     )
 

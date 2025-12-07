@@ -136,27 +136,27 @@ def get_binary_stats_quote(binary_stats):
     """Get a quote about binary statistics
 
     Args:
-        binary_stats (dict): Dictionary with 'min', 'max', 'avg' keys (in KB)
+        binary_stats (dict): Dictionary with 'min size', 'max size', 'avg size' keys (in KB)
 
     Returns:
         str: A humorous quote about the binary size distribution
     """
-    if binary_stats['min'] == binary_stats['max']:
+    if binary_stats['min size'] == binary_stats['max size']:
         quotes = [
             "All your binaries are exactly the same size? That's more suspicious than identical twins with the same outfit.",
             "Same size binaries across the board. Either you're extremely consistent or something fishy is going on...",
             "Your binaries have found size equilibrium - like a digital zen garden.",
-            f"Every binary is exactly {binary_stats['min']:.1f}KB. Coincidence? I think not!",
+            f"Every binary is exactly {binary_stats['min size']:.1f}KB. Coincidence? I think not!",
             "The binary size inspector called: they want to know how you got them all exactly the same size."
         ]
         return random.choice(quotes)
 
-    size_ratio = binary_stats['max'] / max(1, binary_stats['min'])
+    size_ratio = binary_stats['max size'] / max(1, binary_stats['min size'])
 
     if size_ratio > 100:
         quotes = [
             f"Your largest binary is {size_ratio:.1f}x bigger than your smallest. That's like comparing uhh, something huge to something tiny.",
-            f"From tiny {binary_stats['min']:.1f}KB to whopping {binary_stats['max']:.1f}KB - that's a {size_ratio:.1f}x range!",
+            f"From tiny {binary_stats['min size']:.1f}KB to whopping {binary_stats['max size']:.1f}KB - that's a {size_ratio:.1f}x range!",
             f"Talk about size diversity! Your binaries range from microbe to whale ({size_ratio:.1f}x difference).",
             f"The binary size spectrum in your collection spans {size_ratio:.1f}x from smallest to largest. Impressive range!",
             f"Your binaries have serious size inequality issues - a {size_ratio:.1f}x gap between the haves and have-nots."
@@ -164,21 +164,21 @@ def get_binary_stats_quote(binary_stats):
         return random.choice(quotes)
     elif size_ratio > 10:
         quotes = [
-            f"From {binary_stats['min']:.1f}KB to {binary_stats['max']:.1f}KB - you've got quite the range there!",
-            f"Your binary sizes span from {binary_stats['min']:.1f}KB to {binary_stats['max']:.1f}KB - that's versatility!",
+            f"From {binary_stats['min size']:.1f}KB to {binary_stats['max size']:.1f}KB - you've got quite the range there!",
+            f"Your binary sizes span from {binary_stats['min size']:.1f}KB to {binary_stats['max size']:.1f}KB - that's versatility!",
             f"A {size_ratio:.1f}x difference between your smallest and largest binary. Not extreme, but definitely noteworthy.",
-            f"Your average binary weighs in at {binary_stats['avg']:.1f}KB - right in the Goldilocks zone!",
-            f"Binary size range: {binary_stats['min']:.1f}KB to {binary_stats['max']:.1f}KB. A healthy ecosystem of code."
+            f"Your average binary weighs in at {binary_stats['avg size']:.1f}KB - right in the Goldilocks zone!",
+            f"Binary size range: {binary_stats['min size']:.1f}KB to {binary_stats['max size']:.1f}KB. A healthy ecosystem of code."
         ]
         return random.choice(quotes)
     else:
         quotes = [
             "Your binaries are surprisingly consistent in size. Marie Kondo would be proud of your tidy code.",
-            f"With sizes ranging from {binary_stats['min']:.1f}KB to {binary_stats['max']:.1f}KB, your binaries are practically family.",
+            f"With sizes ranging from {binary_stats['min size']:.1f}KB to {binary_stats['max size']:.1f}KB, your binaries are practically family.",
             "Your binary size distribution is tighter than a rock band's rhythm section.",
             f"Binary sizes all within a {size_ratio:.1f}x range - not much for variety, are you?",
             "Your binaries are like a well-designed set of nesting dolls - consistently proportioned.",
-            f"Average size: {binary_stats['avg']:.1f}KB. Remarkably consistent across the board!"
+            f"Average size: {binary_stats['avg size']:.1f}KB. Remarkably consistent across the board!"
         ]
         return random.choice(quotes)
 
@@ -244,3 +244,50 @@ def get_static_binaries_quote(static_binaries_count):
             f"With {dynamic_count} dynamic binaries, you're optimizing for size and update flexibility."
         ]
         return random.choice(quotes)
+
+
+def get_projects_quote(project_count):
+    """Get a quote about project usage
+
+    Args:
+        project_count (int): Number of Binary Ninja projects
+
+    Returns:
+        str: A humorous quote about project usage
+    """
+    if project_count == 0:
+        quotes = [
+            "No projects yet? Sometimes the best work happens directly in individual files!",
+            "Flying solo without projects - a true minimalist approach.",
+            "Zero projects detected. You're more of a 'one file at a time' kind of person.",
+            "No projects? Maybe you're on non-commercial and those Vector 35 folks haven't been extra nice yet.",
+        ]
+    elif project_count == 1:
+        quotes = [
+            "One project! You're keeping things organized. That's the spirit!",
+            "A single project shows focus and dedication to one task at a time.",
+            "One project to rule them all! Quality over quantity.",
+        ]
+    elif project_count <= 3:
+        quotes = [
+            f"{project_count} projects! You're getting organized. We like it!",
+            f"Working across {project_count} projects? Impressive multitasking!",
+            f"With {project_count} projects, you're balancing multiple investigations nicely.",
+        ]
+    elif project_count <= 10:
+        quotes = [
+            f"{project_count} projects! Someone's staying organized. Are you using Enterprise?",
+            f"Wow, {project_count} projects! Your organizational skills are on point.",
+            f"Managing {project_count} projects like a pro! Enterprise features treating you well?",
+            f"{project_count} projects in your recent files - you must have excellent taste in tools!",
+        ]
+    else:
+        quotes = [
+            f"{project_count} projects!? You're basically running a reverse engineering empire!",
+            f"Holy organization, Batman! {project_count} projects shows serious dedication.",
+            f"With {project_count} projects, you're definitely getting your money's worth from Enterprise!",
+            f"{project_count} projects! You clearly appreciate the finer things in life, like proper project management.",
+            f"The {project_count} projects in your recent files suggest you're a Binary Ninja power user. Respect!",
+        ]
+
+    return random.choice(quotes)
