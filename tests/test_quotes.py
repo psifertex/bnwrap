@@ -95,27 +95,26 @@ class TestGetBinaryStatsQuote(unittest.TestCase):
 
     def test_same_size_binaries(self):
         """Should detect when all binaries are same size"""
-        stats = {'min': 100.0, 'max': 100.0, 'avg': 100.0}
+        stats = {'min size': 100.0, 'max size': 100.0, 'avg size': 100.0}
         result = get_binary_stats_quote(stats)
         self.assertIsInstance(result, str)
-        # Should mention the identical sizes
         self.assertTrue(len(result) > 0)
 
     def test_large_size_ratio(self):
         """Should handle large size differences"""
-        stats = {'min': 10.0, 'max': 10000.0, 'avg': 5000.0}
+        stats = {'min size': 10.0, 'max size': 10000.0, 'avg size': 5000.0}
         result = get_binary_stats_quote(stats)
         self.assertIsInstance(result, str)
 
     def test_medium_size_ratio(self):
         """Should handle medium size differences"""
-        stats = {'min': 100.0, 'max': 1500.0, 'avg': 800.0}
+        stats = {'min size': 100.0, 'max size': 1500.0, 'avg size': 800.0}
         result = get_binary_stats_quote(stats)
         self.assertIsInstance(result, str)
 
     def test_small_size_ratio(self):
         """Should handle small size differences"""
-        stats = {'min': 100.0, 'max': 150.0, 'avg': 125.0}
+        stats = {'min size': 100.0, 'max size': 150.0, 'avg size': 125.0}
         result = get_binary_stats_quote(stats)
         self.assertIsInstance(result, str)
 

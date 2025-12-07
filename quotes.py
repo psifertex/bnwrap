@@ -67,7 +67,6 @@ def get_file_formats_quote(file_formats):
         ]
         return random.choice(quotes)
     elif num_formats >= 3:
-        # Get the top format
         top_format = sorted(file_formats.items(), key=operator.itemgetter(1), reverse=True)[0][0]
         quotes = [
             f"Variety is the spice of life! With {num_formats} different file formats, your binaries are having a format party.",
@@ -117,7 +116,6 @@ def get_architectures_quote(cpu_archs):
         ]
         return random.choice(quotes)
     elif num_archs >= 3:
-        # Get the top architecture
         top_arch = sorted(cpu_archs.items(), key=operator.itemgetter(1), reverse=True)[0][0]
         quotes = [
             f"With {num_archs} different architectures, you're basically the United Nations of binary analysis!",
@@ -128,8 +126,6 @@ def get_architectures_quote(cpu_archs):
             f"You've analyzed {num_archs} different architectures. That's like speaking {num_archs} different CPU languages!"
         ]
         return random.choice(quotes)
-    else:
-        return "I have no idea how you've managed this."
 
 
 def get_binary_stats_quote(binary_stats):

@@ -197,9 +197,8 @@ class TestFileAnalyzer(unittest.TestCase):
             analyzer = FileAnalyzer()
             result = analyzer._analyze_file(temp_file)
 
-            # Should return 'Unknown' for file_formats and arch on error
-            self.assertEqual(result['file_formats'], 'Unknown')
-            self.assertEqual(result['arch'], 'Unknown')
+            self.assertEqual(result['file_formats'], 'Raw')
+            self.assertEqual(result['arch'], 'Raw')
             self.assertEqual(result['num_imports'], 0)
         finally:
             os.unlink(temp_file)
@@ -207,20 +206,18 @@ class TestFileAnalyzer(unittest.TestCase):
     @patch('file_analyzer.user_directory')
     @patch('file_analyzer.get_file_hash')
     @patch('file_analyzer.load')
-    def test_unknown_format_becomes_unknown(self, mock_load, mock_hash, mock_user_dir):
-        """Should convert empty view_type to 'Unknown'"""
+    def test_unknown_format_becomes_raw(self, mock_load, mock_hash, mock_user_dir):
+        """Should convert empty view_type to 'Raw'"""
         mock_user_dir.return_value = self.temp_dir
         mock_hash.return_value = 'test_hash'
 
-        # Create a temp file
         with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(b"unknown binary content")
             temp_file = f.name
 
         try:
-            # Mock Binary Ninja returning empty view_type for unknown format
             mock_bv = MagicMock()
-            mock_bv.view_type = ''  # Empty string for unknown format
+            mock_bv.view_type = ''
             mock_bv.arch.name = 'x86_64'
             mock_bv.get_symbols_of_type.return_value = []
             mock_load.return_value.__enter__.return_value = mock_bv
@@ -228,8 +225,7 @@ class TestFileAnalyzer(unittest.TestCase):
             analyzer = FileAnalyzer()
             result = analyzer.skim_file(temp_file)
 
-            # Should convert empty view_type to 'Unknown'
-            self.assertEqual(result['file_formats'], 'Unknown')
+            self.assertEqual(result['file_formats'], 'Raw')
             self.assertEqual(result['arch'], 'x86_64')
         finally:
             os.unlink(temp_file)

@@ -38,9 +38,9 @@ class TestStatsTotals(unittest.TestCase):
             mock_results = [
                 {'file_formats': 'ELF', 'arch': 'x86_64', 'size': 100, 'num_imports': 10, 'is_static': False},
                 {'file_formats': 'PE', 'arch': 'x86', 'size': 200, 'num_imports': 5, 'is_static': True},
-                {'file_formats': 'Unknown', 'arch': 'ARM', 'size': 150, 'num_imports': 3, 'is_static': True},
+                {'file_formats': 'Raw', 'arch': 'ARM', 'size': 150, 'num_imports': 3, 'is_static': True},
                 {'file_formats': 'ELF', 'arch': 'x86_64', 'size': 175, 'num_imports': 20, 'is_static': False},
-                {'file_formats': 'Unknown', 'arch': '', 'size': 50, 'num_imports': 0, 'is_static': True},
+                {'file_formats': 'Raw', 'arch': '', 'size': 50, 'num_imports': 0, 'is_static': True},
             ]
 
             for i, mock_result in enumerate(mock_results):
@@ -63,7 +63,7 @@ class TestStatsTotals(unittest.TestCase):
 
                 # Set up mock for this file
                 mock_bv = MagicMock()
-                mock_bv.view_type = mock_result['file_formats'] if mock_result['file_formats'] != 'Unknown' else ''
+                mock_bv.view_type = mock_result['file_formats'] if mock_result['file_formats'] != 'Raw' else ''
                 mock_bv.arch.name = mock_result['arch']
                 mock_bv.get_symbols_of_type.return_value = range(mock_result['num_imports'])
                 mock_load.return_value.__enter__.return_value = mock_bv
@@ -90,7 +90,7 @@ class TestStatsTotals(unittest.TestCase):
             self.assertEqual(total_count, 5, "Should have analyzed 5 files")
             self.assertEqual(file_formats.get('ELF', 0), 2, "Should have 2 ELF files")
             self.assertEqual(file_formats.get('PE', 0), 1, "Should have 1 PE file")
-            self.assertEqual(file_formats.get('Unknown', 0), 2, "Should have 2 Unknown files")
+            self.assertEqual(file_formats.get('Raw', 0), 2, "Should have 2 Raw files")
 
         finally:
             # Cleanup
@@ -122,7 +122,7 @@ class TestStatsTotals(unittest.TestCase):
                 {'file_formats': 'PE', 'arch': 'x86', 'size': 200, 'num_imports': 5},
                 {'file_formats': 'Mach-O', 'arch': 'aarch64', 'size': 150, 'num_imports': 3},
                 {'file_formats': 'ELF', 'arch': 'x86_64', 'size': 175, 'num_imports': 20},
-                {'file_formats': 'Unknown', 'arch': '', 'size': 50, 'num_imports': 0},  # Empty arch
+                {'file_formats': 'Raw', 'arch': '', 'size': 50, 'num_imports': 0},
             ]
 
             for i, mock_result in enumerate(mock_results):
@@ -145,7 +145,7 @@ class TestStatsTotals(unittest.TestCase):
 
                 # Set up mock for this file
                 mock_bv = MagicMock()
-                mock_bv.view_type = mock_result['file_formats'] if mock_result['file_formats'] != 'Unknown' else ''
+                mock_bv.view_type = mock_result['file_formats'] if mock_result['file_formats'] != 'Raw' else ''
                 mock_bv.arch = MagicMock() if mock_result['arch'] else None
                 if mock_result['arch']:
                     mock_bv.arch.name = mock_result['arch']
@@ -175,7 +175,7 @@ class TestStatsTotals(unittest.TestCase):
             self.assertEqual(cpu_archs.get('x86_64', 0), 2, "Should have 2 x86_64 files")
             self.assertEqual(cpu_archs.get('x86', 0), 1, "Should have 1 x86 file")
             self.assertEqual(cpu_archs.get('aarch64', 0), 1, "Should have 1 aarch64 file")
-            self.assertEqual(cpu_archs.get('Unknown', 0), 1, "Should have 1 Unknown arch file")
+            self.assertEqual(cpu_archs.get('Raw', 0), 1, "Should have 1 Raw arch file")
 
         finally:
             # Cleanup
@@ -189,8 +189,8 @@ class TestStatsTotals(unittest.TestCase):
     @patch('file_analyzer.user_directory')
     @patch('file_analyzer.get_file_hash')
     @patch('file_analyzer.load')
-    def test_error_cases_use_unknown(self, mock_load, mock_hash, mock_user_dir):
-        """Files that error during analysis should use 'Unknown' format"""
+    def test_error_cases_use_raw(self, mock_load, mock_hash, mock_user_dir):
+        """Files that error during analysis should use 'Raw' format"""
         from file_analyzer import FileAnalyzer
 
         temp_dir = tempfile.mkdtemp()
@@ -211,9 +211,8 @@ class TestStatsTotals(unittest.TestCase):
             # Analyze the file
             result = analyzer._analyze_file(temp_file)
 
-            # Should have 'Unknown' format, not empty
-            self.assertEqual(result['file_formats'], 'Unknown',
-                           "Error cases should return 'Unknown' format")
+            self.assertEqual(result['file_formats'], 'Raw',
+                           "Error cases should return 'Raw' format")
 
             # Cleanup
             os.unlink(temp_file)

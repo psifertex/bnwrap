@@ -2,18 +2,14 @@
 Logging setup for Binary Ninja Wrapped plugin.
 """
 
-# Set to True to enable file-based logging for debugging
-USE_FILE_LOGGING = True
+USE_FILE_LOGGING = False
 
 if USE_FILE_LOGGING:
-    # File-based logger for debugging (writes to /tmp/bnwrapped.log)
     import logging as pylogging
 
     class Logger:
-        """File logger for debugging"""
-        def __init__(self, session_id, name):
+        def __init__(self, name):
             self.name = name
-            # Set up Python logging to file
             pylogging.basicConfig(
                 filename='/tmp/bnwrapped.log',
                 level=pylogging.DEBUG,
@@ -23,7 +19,6 @@ if USE_FILE_LOGGING:
             self.py_logger = pylogging.getLogger(name)
             self.py_logger.info(f"=== Logger initialized for {name} ===")
 
-            # Silence all matplotlib debug logs
             pylogging.getLogger('matplotlib').setLevel(pylogging.WARNING)
 
         def log_debug(self, message):
@@ -41,11 +36,8 @@ if USE_FILE_LOGGING:
         def log_alert(self, message):
             self.py_logger.critical(message)
 
-    # Create the shared logger instance
-    logger = Logger(0, "BNWrapped")
+    logger = Logger("BNWrapped")
 else:
-    # Binary Ninja logger (appears in Log window)
     from binaryninja.log import Logger
 
-    # Create the shared Binary Ninja logger instance
     logger = Logger(0, "BNWrapped")

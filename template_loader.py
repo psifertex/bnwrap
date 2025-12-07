@@ -13,7 +13,6 @@ def get_template_path(template_name):
     Returns:
         str: Absolute path to the template file
     """
-    # Get the directory where this module is located
     module_dir = os.path.dirname(os.path.abspath(__file__))
     templates_dir = os.path.join(module_dir, 'templates')
     return os.path.join(templates_dir, template_name)
@@ -80,7 +79,7 @@ def render_stats_tab(user_name, stats_quote, file_formats_html, formats_quote,
 def render_export_html(css, date, overall_quote, binary_count, formats_quote,
                        file_formats_html, archs_quote, cpu_archs_html,
                        binary_stats_quote, binary_stats_html, biggest_binary_html,
-                       static_quote, static_count, dynamic_count, user_name):
+                       static_quote, static_count, dynamic_count, user_name, year):
     """Render the export HTML template
 
     Args:
@@ -99,6 +98,7 @@ def render_export_html(css, date, overall_quote, binary_count, formats_quote,
         static_count (int): Number of static binaries
         dynamic_count (int): Number of dynamic binaries
         user_name (str): User's name
+        year (int): Year for the wrapped report
 
     Returns:
         str: Rendered HTML
@@ -119,7 +119,8 @@ def render_export_html(css, date, overall_quote, binary_count, formats_quote,
         static_quote=static_quote,
         static_count=static_count,
         dynamic_count=dynamic_count,
-        user_name=user_name
+        user_name=user_name,
+        year=year
     )
 
 
