@@ -197,9 +197,9 @@ class TestFileAnalyzer(unittest.TestCase):
             analyzer = FileAnalyzer()
             result = analyzer._analyze_file(temp_file)
 
-            # Should return empty result on error
-            self.assertEqual(result['file_formats'], '')
-            self.assertEqual(result['arch'], '')
+            # Should return 'Unknown' for file_formats and arch on error
+            self.assertEqual(result['file_formats'], 'Unknown')
+            self.assertEqual(result['arch'], 'Unknown')
             self.assertEqual(result['num_imports'], 0)
         finally:
             os.unlink(temp_file)

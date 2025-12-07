@@ -20,7 +20,7 @@ def get_stats_quote(count, user_name, binary_stats):
         f"You've analyzed {count} binaries. That's more than most people analyze in a lifetime!",
         f"Your Binary Ninja has munched through {count} files. It's basically a digital gourmand.",
         f"If each binary was a step, you'd have walked {count} steps into the land of reverse engineering.",
-        f"Your binaries collectively take up {sum(binary_stats.values())/3:.2f} KB. That's like... a small picture of a cat.",
+        f"Your {count} binaries collectively take up {sum(binary_stats.values())/3:.2f} KB. That's like... a small picture of a cat.",
         f"Hey {user_name}, if reverse engineering were an Olympic sport, you'd be a contender with those {count} binaries!",
         f"Binary analysis level: {count}. Keep going {user_name}, you're doing great!",
         f"Your reverse engineering journey has taken you through {count} binaries. That's dedication!",

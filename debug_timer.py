@@ -3,8 +3,12 @@ Debug timer widget for Binary Ninja status bar.
 """
 from PySide6 import QtWidgets, QtCore
 from PySide6.QtCore import QTimer
-from binaryninja.log import log as bnlog
-from binaryninja.log import LogLevel
+
+# Import the plugin's logger instance
+try:
+    from .log import logger
+except ImportError:
+    from log import logger
 
 
 class DebugTimerWidget(QtWidgets.QWidget):
@@ -116,12 +120,12 @@ def init_debug_timer(settings, core_ui_enabled):
                     status_bar = window.statusBar()
                     debug_timer_widget = DebugTimerWidget()
                     status_bar.addPermanentWidget(debug_timer_widget)
-                    bnlog(LogLevel.InfoLog, "Debug timer widget added to status bar")
+                    logger.log_info("Debug timer widget added to status bar")
 
             # Start the process to add the widget when UI is ready
             QTimer.singleShot(1000, add_debug_timer_to_status_bar)
 
         except ImportError:
-            bnlog(LogLevel.ErrorLog, "Failed to import UI modules for debug timer")
+            logger.log_error("Failed to import UI modules for debug timer")
 
     return debug_timer_widget

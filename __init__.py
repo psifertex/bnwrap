@@ -10,8 +10,10 @@ import tempfile
 import urllib.parse
 import hashlib
 from binaryninja import load, SymbolType, user_directory, Settings, core_ui_enabled
-from binaryninja.log import log as bnlog
 from binaryninja.log import LogLevel
+
+# Import shared logger
+from .log import logger
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import QResource, QTimer
 import matplotlib.pyplot as plt
@@ -208,10 +210,9 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 
             # Update stats
             self.count += 1
+            # Count file format and architecture (file_analyzer guarantees these are never empty)
             self.file_formats[result['file_formats']] = self.file_formats.get(result['file_formats'], 0) + 1
-            # Only count architecture if it's not empty
-            if result['arch']:
-                self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
+            self.cpu_archs[result['arch']] = self.cpu_archs.get(result['arch'], 0) + 1
 
             # Only include non-empty files in size calculations
             if result['size'] > 0:
@@ -378,11 +379,11 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.shareLinkedInButton.setStyleSheet(socialButtonStyle)
         socialButtonLayout.addWidget(self.shareLinkedInButton)
         
-        # Add close button
-        self.closeButton = QtWidgets.QPushButton("Close", self)
-        self.closeButton.clicked.connect(self.close)
-        self.closeButton.setStyleSheet(buttonStyle)
-        buttonLayout.addWidget(self.closeButton)
+        # Add refresh button
+        self.refreshButton = QtWidgets.QPushButton("Refresh Stats", self)
+        self.refreshButton.clicked.connect(self.refreshStats)
+        self.refreshButton.setStyleSheet(buttonStyle)
+        buttonLayout.addWidget(self.refreshButton)
         
         # Add both button layouts to the main layout
         layout.addLayout(socialButtonLayout)
@@ -400,7 +401,39 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.current_tab_index = index
         
     # Quote functionality has been moved to individual tabs
-        
+
+    def refreshStats(self):
+        """Refresh statistics by clearing cache and recomputing"""
+        # Clear the file analyzer cache in memory
+        self.file_analyzer.cache = {}
+
+        # Show progress dialog
+        dialog = QtWidgets.QProgressDialog(
+            f"Re-analyzing your binary files, {self.user_name}...",
+            "Cancel",
+            0,
+            len(self.recent_files),
+            self
+        )
+        dialog.setWindowTitle("Binary Ninja Wrapped - Refresh")
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        dialog.setAutoClose(True)
+        dialog.setMinimumDuration(0)
+        dialog.show()
+        QtWidgets.QApplication.processEvents()
+
+        # Recompute stats
+        self.computeStats(dialog)
+
+        # Close progress dialog
+        dialog.close()
+
+        # Save the updated cache to disk (to default location, no prompt)
+        self.file_analyzer.save_cache()
+
+        # Update UI with new data
+        self.updateUI()
+
     def updateUI(self):
         """Update the UI with the latest data after computations are done"""
         # Update the tabs with real data
@@ -1381,7 +1414,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                     f.write(html)
                 html_saved = True
             except Exception as e:
-                bnlog(LogLevel.ErrorLog, f"Error saving HTML: {str(e)}")
+                logger.log_error(f"Error saving HTML: {str(e)}")
                 html_saved = False
             
             # Show completion message
@@ -1709,7 +1742,7 @@ def launchBNWrapped(context):
     
     # Create widget but don't close splash yet - we'll enforce a minimum display time
     widget = BNWrappedWidget(recent_files, splash)
-    widget.resize(1000, 800)
+    widget.resize(750, 600)
     widget.show()
     
     # Enforce a minimum splash screen display time of 3 seconds

@@ -5,8 +5,12 @@ import os
 import getpass
 import platform
 import hashlib
-from binaryninja.log import log as bnlog
-from binaryninja.log import LogLevel
+
+# Import the plugin's logger instance
+try:
+    from .log import logger
+except ImportError:
+    from log import logger
 
 
 def get_user_name():
@@ -63,5 +67,5 @@ def get_file_hash(file_path):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
     except:
-        bnlog(LogLevel.WarningLog, f"Failed to compute hash for {file_path}")
+        logger.log_warn(f"Failed to compute hash for {file_path}")
         return None
