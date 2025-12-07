@@ -380,7 +380,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         socialButtonLayout.addWidget(self.shareLinkedInButton)
         
         # Add refresh button
-        self.refreshButton = QtWidgets.QPushButton("Refresh Stats", self)
+        self.refreshButton = QtWidgets.QPushButton("Flush Stats Cache", self)
         self.refreshButton.clicked.connect(self.refreshStats)
         self.refreshButton.setStyleSheet(buttonStyle)
         buttonLayout.addWidget(self.refreshButton)
@@ -483,6 +483,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         quoteLabel = QtWidgets.QLabel(widget)
         quoteLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         quoteLabel.setWordWrap(True)
+        quoteLabel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Maximum)
         
         # Use theme-appropriate color for the quote background
         bg_color = ""
@@ -662,7 +663,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
         background_color = self.background_colors[1]  # Use the color for tab 1
 
-        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
+        fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=1)  # Use File Formats tab-specific colors
         # Choose text color based on background brightness
@@ -702,9 +703,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         for text in texts:
             text.set_color(text_color)
             text.set_fontsize(14)  # Consistent font size for labels
-            
-        # Choose text color based on background brightness
-        text_color = 'black' if hasattr(self, 'background_is_light') and self.background_is_light.get(1, False) else 'white'
+
         ax.set_title("File Format Breakdown", color=text_color, fontweight='bold', fontsize=20)
         return self.figureToPixmap(fig)
 
@@ -778,7 +777,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
         background_color = self.background_colors[2]  # Use the color for tab 2
 
-        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
+        fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=2)  # Use CPU Architecture tab-specific colors
         bars = ax.bar(
@@ -809,7 +808,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 fontweight='bold',
                 fontsize=label_fontsize
             )
-            
+
         ax.set_title("CPU Architectures", color=text_color, fontweight='bold', fontsize=20)
         ax.set_facecolor(background_color)  # Use the selected background color
         
@@ -836,7 +835,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
         background_color = self.background_colors[3]  # Use the color for tab 3
 
-        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
+        fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=3)  # Use Binary Statistics tab-specific colors
         bars = ax.bar(
@@ -867,7 +866,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 fontweight='bold',
                 fontsize=label_fontsize
             )
-            
+
         ax.set_title("Binary Statistics", color=text_color, fontweight='bold', fontsize=20)
         ax.set_ylabel("Size (KB)", color=text_color, fontsize=16)
         ax.set_facecolor(background_color)  # Use the selected background color
@@ -899,7 +898,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
         background_color = self.background_colors[4]  # Use the color for tab 4
 
-        fig, ax = plt.subplots(figsize=(10, 8), facecolor=background_color)
+        fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
         
         colors = self.get_spotify_colors(tab_index=4)  # Use Static Binaries tab-specific colors
         bars = ax.bar(
@@ -933,7 +932,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 fontweight='bold',
                 fontsize=label_fontsize
             )
-            
+
         ax.set_title("Static vs Dynamic Binaries", color=text_color, fontweight='bold', fontsize=20)
         ax.set_ylabel("Count", color=text_color, fontsize=16)
         ax.set_facecolor(background_color)  # Use the selected background color
@@ -1094,39 +1093,31 @@ class BNWrappedWidget(QtWidgets.QWidget):
             x_pos = 60 + col * (chart_width + horizontal_spacing) + (chart_width - pixmap.width()) // 2
             y_pos = header_height + row * (chart_height + quote_height + vertical_spacing)
             
-            # Draw the chart
+            # Draw the chart (title is already included in the chart from matplotlib)
             painter.drawPixmap(x_pos, y_pos, pixmap)
-            
-            # Draw the chart title
-            title_font = QtGui.QFont()
-            title_font.setPointSize(12)
-            title_font.setBold(True)
-            painter.setFont(title_font)
-            painter.setPen(QtCore.Qt.GlobalColor.white)
-            title_x = 60 + col * (chart_width + horizontal_spacing)
-            title_y = y_pos - 25
-            painter.drawText(
-                QtCore.QRect(title_x, title_y, chart_width, 20),
-                QtCore.Qt.AlignmentFlag.AlignCenter,
-                titles[i]
-            )
-            
+
             # Draw the quote below this chart
             quote = quotes[i]
             quote_font = QtGui.QFont()
             quote_font.setPointSize(10)
             quote_font.setItalic(True)
             painter.setFont(quote_font)
-            painter.setPen(QtCore.Qt.GlobalColor.white)
-            
-            # Position for the quote is right below the chart
-            quote_x = 60 + col * (chart_width + horizontal_spacing)
+
+            # Position for the quote is right below the chart, centered over the actual chart image
+            quote_x = x_pos
             quote_y = y_pos + pixmap.height() + 10
-            
+
             # Draw colorful box for the quote - use the tab's color scheme
             tab_colors = self.get_spotify_colors(tab_index=i+1)
-            quote_rect = QtCore.QRect(quote_x + 10, quote_y, chart_width - 20, quote_height - 10)
-            painter.fillRect(quote_rect, QtGui.QColor(tab_colors[0]))
+            quote_rect = QtCore.QRect(quote_x + 10, quote_y, pixmap.width() - 20, quote_height - 10)
+            bg_color = QtGui.QColor(tab_colors[0])
+            painter.fillRect(quote_rect, bg_color)
+
+            # Calculate text color based on background brightness
+            r, g, b = bg_color.red(), bg_color.green(), bg_color.blue()
+            brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+            text_color = QtCore.Qt.GlobalColor.black if brightness > 0.5 else QtCore.Qt.GlobalColor.white
+            painter.setPen(text_color)
             
             # Calculate the optimal font size for this quote
             # Start with a large font size and decrease until it fits
@@ -1742,7 +1733,7 @@ def launchBNWrapped(context):
     
     # Create widget but don't close splash yet - we'll enforce a minimum display time
     widget = BNWrappedWidget(recent_files, splash)
-    widget.resize(750, 600)
+    widget.resize(1000, 800)
     widget.show()
     
     # Enforce a minimum splash screen display time of 3 seconds
