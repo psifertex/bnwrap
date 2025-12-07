@@ -1,0 +1,71 @@
+<html>
+<head>
+<style>
+    body {{
+        font-family: Arial, sans-serif;
+        color: white;
+        background-color: #1DB954;
+        padding: 20px;
+    }}
+    h1 {{
+        font-size: 24px;
+        text-align: center;
+        margin-bottom: 20px;
+    }}
+    h2 {{
+        font-size: 20px;
+        color: #191414;
+        margin-top: 15px;
+    }}
+    .stat {{
+        font-size: 18px;
+        margin: 10px 0;
+    }}
+    .quote {{
+        font-style: italic;
+        background-color: #191414;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }}
+    .timestamp {{
+        font-size: 12px;
+        color: #191414;
+        text-align: right;
+        margin-top: 5px;
+        font-style: italic;
+    }}
+</style>
+</head>
+<body>
+<h1>Hey {user_name} Here's Your Binary Ninja Wrapped</h1>
+
+<div class="quote">{stats_quote}</div>
+
+<h2>File Formats</h2>
+{file_formats}
+
+<div class="quote">{formats_quote}</div>
+
+<h2>CPU Architectures</h2>
+{cpu_archs}
+
+<div class="quote">{archs_quote}</div>
+
+<h2>Binary Statistics</h2>
+{binary_stats}
+
+{biggest_binary}
+
+<h2>Static Binaries</h2>
+<div class="stat">Static: {static_count}</div>
+<div class="stat">Dynamic: {dynamic_count}</div>
+
+<div class="quote">{static_quote}</div>
+
+<div class="timestamp">Generated: {timestamp}</div>
+
+</body>
+</html>

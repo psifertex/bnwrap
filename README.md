@@ -1,4 +1,4 @@
-# Binary Ninja Wrapped (v1.2)
+# Binary Ninja Wrapped (v1.3)
 
 A fun "Spotify Wrapped" style visualization tool for your Binary Ninja usage.
 
@@ -65,6 +65,29 @@ Each chart comes with personalized, sometimes humorous commentary on your binary
 
 - Binary Ninja (recent version)
 - PySide6 (included with Binary Ninja)
+
+## Development
+
+### Running Tests
+
+The plugin includes a comprehensive test suite to ensure cross-platform compatibility and functionality.
+
+**Install test dependencies:**
+```bash
+pip install -r tests/requirements.txt
+```
+
+**Run all tests:**
+```bash
+BNWRAP_TESTING=1 python -m pytest tests/ -v
+```
+
+**Run specific test file:**
+```bash
+BNWRAP_TESTING=1 python -m pytest tests/test_utils.py -v
+```
+
+The `BNWRAP_TESTING` environment variable prevents Binary Ninja UI initialization, allowing tests to run without the full Binary Ninja installation.
 
 ## Contributing
 

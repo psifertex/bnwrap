@@ -17,6 +17,13 @@ from PySide6.QtCore import QResource, QTimer
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+# Import refactored modules
+from .utils import get_user_name, get_file_hash
+from .file_analyzer import FileAnalyzer
+from .debug_timer import DebugTimerWidget, init_debug_timer
+from . import quotes
+from . import template_loader
+
 widget = None
 debug_timer_widget = None
 
@@ -31,42 +38,9 @@ settings.register_setting("bnwrap.show_debug_timer", """{
     "requiresRestart": true
     }""")
 
-# Initialize the debug timer if UI is enabled and the setting is turned on
-def init_debug_timer():
-    global debug_timer_widget
-    if core_ui_enabled() and settings.get_bool("bnwrap.show_debug_timer"):
-        # We need to import these modules only when UI is enabled
-        try:
-            from binaryninjaui import UIContext
-            
-            # Create a function to add the widget to the status bar
-            def add_debug_timer_to_status_bar():
-                global debug_timer_widget
-                
-                # Get all UI contexts
-                contexts = UIContext.allContexts()
-                if not contexts:
-                    # No contexts available yet, try again later
-                    QTimer.singleShot(1000, add_debug_timer_to_status_bar)
-                    return
-                
-                # Add widget to the first context's status bar
-                window = contexts[0].mainWindow()
-                if window:
-                    status_bar = window.statusBar()
-                    debug_timer_widget = DebugTimerWidget()
-                    status_bar.addPermanentWidget(debug_timer_widget)
-                    bnlog(LogLevel.InfoLog, "Debug timer widget added to status bar")
-            
-            # Start the process to add the widget when UI is ready
-            QTimer.singleShot(1000, add_debug_timer_to_status_bar)
-            
-        except ImportError:
-            bnlog(LogLevel.ErrorLog, "Failed to import UI modules for debug timer")
-    
-
 # Initialize the debug timer on plugin load
-init_debug_timer()
+debug_timer_widget = init_debug_timer(settings, core_ui_enabled)
+
 class BNWrappedWidget(QtWidgets.QWidget):
     def __init__(self, recent_files, splash=None, parent=None):
         super().__init__(parent)
@@ -79,12 +53,12 @@ class BNWrappedWidget(QtWidgets.QWidget):
         self.biggest_binary = {"path": "", "size": 0, "format": "", "arch": ""}
         self.splash = splash  # Store the splash screen reference
         self.splash_start_time = datetime.datetime.now()  # Track when the splash was shown
-        self.user_name = self.get_user_name()  # Get the user's name
+        self.user_name = get_user_name()  # Get the user's name
         self.current_tab_index = 0  # Track the current tab for custom quotes
         self.year = datetime.datetime.now().year  # Current year for display
-        
-        # Initialize the file analysis cache
-        self.initializeCache()
+
+        # Initialize the file analyzer
+        self.file_analyzer = FileAnalyzer()
         
         # Initialize UI with placeholder content
         self.initUI(True)
@@ -95,99 +69,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
         
         # Start stats computation in a small delay to allow UI to render first
         QtCore.QTimer.singleShot(100, self.showProgressDialog)
-            
-    def get_user_name(self):
-        """Get the user's name in a cross-platform way"""
-        try:
-            if platform.system() == "Windows":
-                # Windows-specific approach
-                import ctypes
-                GetUserNameEx = ctypes.windll.secur32.GetUserNameExW
-                NameDisplay = 3  # EXTENDED_NAME_FORMAT value for display name
-                
-                size = ctypes.pointer(ctypes.c_ulong(0))
-                GetUserNameEx(NameDisplay, None, size)
-                
-                nameBuffer = ctypes.create_unicode_buffer(size.contents.value)
-                GetUserNameEx(NameDisplay, nameBuffer, size)
-                return nameBuffer.value
-            else:
-                # Unix-like systems (macOS, Linux)
-                try:
-                    # Try to get the full name from the passwd database
-                    import pwd
-                    return pwd.getpwuid(os.getuid())[4].split(',')[0]
-                except (KeyError, IndexError, ImportError):
-                    pass
-            
-            return getpass.getuser()
-        except:
-            return "Binary Ninja User"
-
-    def skimFile(self, file_path):
-        """Analyze a file, using cache if the SHA256 hash matches"""
-        # Initialize result structure
-        result = {}
-        result['file_formats'] = ''
-        result['arch'] = ''
-        result['size'] = 0
-        result['num_imports'] = 0
-        
-        # Skip files that don't exist or are directories
-        if not os.path.exists(file_path) or os.path.isdir(file_path):
-            return result
-            
-        # Compute file hash for cache lookup
-        file_hash = self.getFileHash(file_path)
-        if not file_hash:
-            # If we can't compute the hash, just analyze the file directly
-            return self._analyzeFile(file_path)
-            
-        # Check if we have a cached result with matching hash
-        if file_path in self.cache and self.cache[file_path].get('hash') == file_hash:
-            bnlog(LogLevel.InfoLog, f"Using cached analysis for: {file_path}")
-            return self.cache[file_path]['result']
-            
-        # If not cached or hash doesn't match, analyze the file
-        bnlog(LogLevel.InfoLog, f"Analyzing file: {file_path}")
-        result = self._analyzeFile(file_path)
-        
-        # Cache the result with the hash
-        self.cache[file_path] = {
-            'hash': file_hash,
-            'result': result,
-            'timestamp': datetime.datetime.now().isoformat()
-        }
-        
-        # Save the updated cache
-        self.saveCache()
-        
-        return result
-        
-    def _analyzeFile(self, file_path):
-        """Perform actual file analysis (no caching)"""
-        result = {}
-        result['file_formats'] = ''
-        result['arch'] = ''
-        result['size'] = 0
-        result['num_imports'] = 0
-        
-        try:
-            with load(file_path, update_analysis=False) as bv:
-                bv.set_analysis_hold(True)
-                result['file_formats'] = bv.view_type
-                result['arch'] = bv.arch.name
-                result['size'] = os.path.getsize(file_path) / 1024
-                # TODO: Handle fat MachO files better here
-                num_imports = len(bv.get_symbols_of_type(SymbolType.ImportAddressSymbol))
-                result['num_imports'] = num_imports
-                # Determine if binary is statically compiled based on import count
-                result['is_static'] = num_imports <= 5
-                bnlog(LogLevel.DebugLog, f"File: {file_path}, Format: {result['file_formats']}, Arch: {result['arch']}, Size: {result['size']} KB, Imports: {num_imports}")
-        except Exception as e:
-            bnlog(LogLevel.ErrorLog, f"Error analyzing {file_path}: {str(e)}")
-            
-        return result
 
     def showProgressDialog(self):
         """Show a progress dialog while computing stats"""
@@ -297,49 +178,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
         # Update UI with real data after computation
         dialog.close()
         self.updateUI()
-    
-    def initializeCache(self):
-        """Initialize the file analysis cache system"""
-        self.cache_dir = os.path.join(user_directory(), "bnwrapped_cache")
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
-        self.cache = {}
-        
-        # Load cache from disk if it exists
-        cache_file = os.path.join(self.cache_dir, "analysis_cache.json")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, 'r') as f:
-                    self.cache = json.load(f)
-            except:
-                bnlog(LogLevel.WarningLog, "Failed to load cache file, creating new cache")
-                self.cache = {}
-    
-    def saveCache(self):
-        """Save the analysis cache to disk"""
-        cache_file = os.path.join(self.cache_dir, "analysis_cache.json")
-        try:
-            with open(cache_file, 'w') as f:
-                json.dump(self.cache, f)
-        except:
-            bnlog(LogLevel.WarningLog, "Failed to save cache file")
-    
-    def getFileHash(self, file_path):
-        """Compute SHA256 hash of a file"""
-        try:
-            if not os.path.exists(file_path) or os.path.isdir(file_path):
-                return None
-                
-            sha256_hash = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                # Read in chunks to handle large files efficiently
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return sha256_hash.hexdigest()
-        except:
-            bnlog(LogLevel.WarningLog, f"Failed to compute hash for {file_path}")
-            return None
-    
+
     def computeStats(self, progress_dialog=None):
         """Compute statistics with optional progress dialog"""
         # Initialize stats
@@ -363,7 +202,7 @@ class BNWrappedWidget(QtWidgets.QWidget):
                 QtWidgets.QApplication.processEvents()
             
             # Process the file
-            result = self.skimFile(f)
+            result = self.file_analyzer.skim_file(f)
             if 'file_formats' not in result or 'arch' not in result or 'size' not in result:
                 continue
                 
@@ -677,97 +516,50 @@ class BNWrappedWidget(QtWidgets.QWidget):
         text.setReadOnly(True)
         
         # Build stats text with HTML formatting, escaping CSS curly braces
-        html = """
-        <html>
-        <head>
-        <style>
-            body {{ 
-                font-family: Arial, sans-serif; 
-                color: white; 
-                background-color: #1DB954;
-                padding: 20px;
-            }}
-            h1 {{ 
-                font-size: 24px; 
-                text-align: center;
-                margin-bottom: 20px;
-            }}
-            h2 {{ 
-                font-size: 20px; 
-                color: #191414;
-                margin-top: 15px;
-            }}
-            .stat {{
-                font-size: 18px;
-                margin: 10px 0;
-            }}
-            .quote {{
-                font-style: italic;
-                background-color: #191414;
-                color: white;
-                padding: 10px;
-                border-radius: 5px;
-                margin-top: 15px;
-                margin-bottom: 15px;
-            }}
-            .timestamp {{
-                font-size: 12px;
-                color: #191414;
-                text-align: right;
-                margin-top: 5px;
-                font-style: italic;
-            }}
-        </style>
-        </head>
-        <body>
-        <h1>Hey {} Here's Your Binary Ninja Wrapped</h1>
-        """.format(self.user_name)
-        
-        # Add quote about general stats
-        html += f'<div class="quote">{self.getJokeForStats()}</div>'
-        
-        html += '<h2>File Formats</h2>'
-        # Sort and add file formats
+        # Build HTML components
+        file_formats_html = ''
         sorted_formats = sorted(self.file_formats.items(), key=operator.itemgetter(1), reverse=True)
         for fmt, count in sorted_formats:
-            html += f'<div class="stat">{fmt}: {count}</div>'
-        
-        # Add quote about file formats
-        html += f'<div class="quote">{self.getJokeForFileFormats()}</div>'
-        
-        html += '<h2>CPU Architectures</h2>'
+            file_formats_html += f'<div class="stat">{fmt}: {count}</div>'
+
+        cpu_archs_html = ''
         sorted_archs = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)
         for arch, count in sorted_archs:
-            html += f'<div class="stat">{arch}: {count}</div>'
-        
-        # Add quote about CPU architectures
-        html += f'<div class="quote">{self.getJokeForArchitectures()}</div>'
-        
-        html += '<h2>Binary Statistics</h2>'
+            cpu_archs_html += f'<div class="stat">{arch}: {count}</div>'
+
+        binary_stats_html = ''
         for stat, value in self.binary_stats.items():
-            html += f'<div class="stat">{stat.capitalize()}: {value:.2f} KB</div>'
-        
-        # Add biggest binary information
+            binary_stats_html += f'<div class="stat">{stat.capitalize()}: {value:.2f} KB</div>'
+
+        biggest_binary_html = ''
         if self.biggest_binary["path"]:
-            html += '<h2>Biggest Binary</h2>'
-            html += f'<div class="stat">Path: {os.path.basename(self.biggest_binary["path"])}</div>'
-            html += f'<div class="stat">Size: {self.biggest_binary["size"]:.2f} KB</div>'
-            html += f'<div class="stat">Format: {self.biggest_binary["format"]}</div>'
             arch_display = self.biggest_binary["arch"] if self.biggest_binary["arch"] else "Unknown"
-            html += f'<div class="stat">Architecture: {arch_display}</div>'
-        
-        html += f'<h2>Static Binaries</h2>'
-        html += f'<div class="stat">Static: {self.static_binaries_count["static"]}</div>'
-        html += f'<div class="stat">Dynamic: {self.static_binaries_count["dynamic"]}</div>'
-        
-        # Add quote about static binaries
-        html += f'<div class="quote">{self.getQuoteForStaticBinaries()}</div>'
-        
-        # Add generation timestamp at the bottom
+            biggest_binary_html = f'''
+<h2>Biggest Binary</h2>
+<div class="stat">Path: {os.path.basename(self.biggest_binary["path"])}</div>
+<div class="stat">Size: {self.biggest_binary["size"]:.2f} KB</div>
+<div class="stat">Format: {self.biggest_binary["format"]}</div>
+<div class="stat">Architecture: {arch_display}</div>
+'''
+
         current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        html += f'<div class="timestamp">Generated: {current_time}</div>'
-        
-        html += '</body></html>'
+
+        # Render template
+        html = template_loader.render_stats_tab(
+            user_name=self.user_name,
+            stats_quote=self.getJokeForStats(),
+            file_formats_html=file_formats_html,
+            formats_quote=self.getJokeForFileFormats(),
+            cpu_archs_html=cpu_archs_html,
+            archs_quote=self.getJokeForArchitectures(),
+            binary_stats_html=binary_stats_html,
+            biggest_binary_html=biggest_binary_html,
+            static_count=self.static_binaries_count["static"],
+            dynamic_count=self.static_binaries_count["dynamic"],
+            static_quote=self.getQuoteForStaticBinaries(),
+            timestamp=current_time
+        )
+
         text.setHtml(html)
         
         layout.addWidget(text)
@@ -1531,206 +1323,57 @@ class BNWrappedWidget(QtWidgets.QWidget):
             
             # Get current date for the header
             current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            # Build an HTML file with all stats
-            css = """
-                body {
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    color: #FFFFFF;
-                    background-color: #191414;
-                    margin: 0;
-                    padding: 20px;
-                    line-height: 1.6;
-                }
-                .container {
-                    max-width: 900px;
-                    margin: 0 auto;
-                    background-color: #222222;
-                    padding: 30px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                }
-                h1 {
-                    color: #1DB954;
-                    text-align: center;
-                    font-size: 32px;
-                    margin-top: 0;
-                    padding-bottom: 10px;
-                    border-bottom: 2px solid #333;
-                }
-                h2 {
-                    color: #1DB954;
-                    font-size: 24px;
-                    margin-top: 30px;
-                    border-bottom: 1px solid #333;
-                    padding-bottom: 5px;
-                }
-                .date {
-                    text-align: center;
-                    color: #888;
-                    font-style: italic;
-                    margin-bottom: 30px;
-                }
-                .section {
-                    margin-bottom: 30px;
-                    background-color: #282828;
-                    padding: 20px;
-                    border-radius: 6px;
-                }
-                .stat-item {
-                    font-size: 16px;
-                    margin: 8px 0;
-                }
-                .stat-value {
-                    font-weight: bold;
-                    color: #1DB954;
-                }
-                .quote {
-                    font-style: italic;
-                    background-color: #1DB954;
-                    color: white;
-                    padding: 15px;
-                    border-radius: 6px;
-                    margin: 20px 0;
-                    text-align: center;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                }
-                .images {
-                    margin-top: 30px;
-                }
-                .chart-image {
-                    width: 100%;
-                    max-width: 800px;
-                    margin: 20px auto;
-                    display: block;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                }
-                .footer {
-                    text-align: center;
-                    margin-top: 40px;
-                    color: #666;
-                    font-size: 14px;
-                }
-                .footer a {
-                    color: #1DB954;
-                    text-decoration: none;
-                }
-                .footer a:hover {
-                    text-decoration: underline;
-                }
-            """
-            
-            html_template = """<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Binary Ninja Wrapped - Stats Summary</title>
-                <style>{css}</style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>Binary Ninja Wrapped</h1>
-                    <div class="date">Generated on {date}</div>
-                    
-                    <div class="section">
-                        <h2>Overall Stats</h2>
-                        <div class="quote">{overall_quote}</div>
-                        <div class="stat-item">Total Binaries Analyzed: <span class="stat-value">{binary_count}</span></div>
-                    </div>
-                    
-                    <div class="section">
-                        <h2>File Formats</h2>
-                        <div class="quote">{formats_quote}</div>
-            """
-            
-            # Format the HTML with our data
-            html = html_template.format(
-                css=css,
-                date=current_date,
-                overall_quote=self.getJokeForStats(),
-                binary_count=self.count,
-                formats_quote=self.getJokeForFileFormats()
-            )
-            
-            # Add file format stats
+
+            # Load CSS
+            css = template_loader.load_export_css()
+
+            # Build HTML components
+            file_formats_html = ''
             sorted_formats = sorted(self.file_formats.items(), key=operator.itemgetter(1), reverse=True)
             for fmt, count in sorted_formats:
-                html += f'<div class="stat-item">{fmt}: <span class="stat-value">{count}</span></div>\n'
-            
-            html += """
-                    </div>
-                    
-                    <div class="section">
-                        <h2>CPU Architectures</h2>
-                        <div class="quote">{0}</div>
-            """.format(self.getJokeForArchitectures())
-            
-            # Add CPU arch stats
+                file_formats_html += f'<div class="stat-item">{fmt}: <span class="stat-value">{count}</span></div>\n'
+
+            cpu_archs_html = ''
             sorted_archs = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)
             for arch, count in sorted_archs:
-                html += f'<div class="stat-item">{arch}: <span class="stat-value">{count}</span></div>\n'
-            
-            html += """
-                    </div>
-                    
-                    <div class="section">
-                        <h2>Binary Statistics</h2>
-                        <div class="quote">{0}</div>
-            """.format(self.getJokeForBinaryStats())
-            
-            # Add binary stats
+                cpu_archs_html += f'<div class="stat-item">{arch}: <span class="stat-value">{count}</span></div>\n'
+
+            binary_stats_html = ''
             for stat, value in self.binary_stats.items():
-                html += f'<div class="stat-item">{stat.capitalize()}: <span class="stat-value">{value:.2f} KB</span></div>\n'
-            
-            # Add biggest binary info if available
+                binary_stats_html += f'<div class="stat-item">{stat.capitalize()}: <span class="stat-value">{value:.2f} KB</span></div>\n'
+
+            biggest_binary_html = ''
             if self.biggest_binary["path"]:
                 binary_name = os.path.basename(self.biggest_binary["path"])
                 binary_size = self.biggest_binary["size"]
                 binary_format = self.biggest_binary["format"]
                 binary_arch = self.biggest_binary["arch"] if self.biggest_binary["arch"] else "Unknown"
-
-                html += f"""
+                biggest_binary_html = f'''
                         <h3>Biggest Binary</h3>
                         <div class="stat-item">Path: <span class="stat-value">{binary_name}</span></div>
                         <div class="stat-item">Size: <span class="stat-value">{binary_size:.2f} KB</span></div>
                         <div class="stat-item">Format: <span class="stat-value">{binary_format}</span></div>
                         <div class="stat-item">Architecture: <span class="stat-value">{binary_arch}</span></div>
-                """
-            
-            # Get static binaries quote and counts
-            static_quote = self.getQuoteForStaticBinaries()
-            static_count = self.static_binaries_count["static"]
-            dynamic_count = self.static_binaries_count["dynamic"]
-            
-            html += f"""
-                    </div>
-                    
-                    <div class="section">
-                        <h2>Static vs Dynamic Binaries</h2>
-                        <div class="quote">{static_quote}</div>
-                        <div class="stat-item">Static: <span class="stat-value">{static_count}</span></div>
-                        <div class="stat-item">Dynamic: <span class="stat-value">{dynamic_count}</span></div>
-                    </div>
+                '''
 
-                    <div class="section">
-                        <h2>Visualizations</h2>
-                        <div class="images">
-                            <img src="file_format_breakdown.png" alt="File Format Breakdown" class="chart-image" />
-                            <img src="cpu_architectures.png" alt="CPU Architectures" class="chart-image" />
-                            <img src="binary_statistics.png" alt="Binary Statistics" class="chart-image" />
-                            <img src="static_binaries.png" alt="Static vs Dynamic Binaries" class="chart-image" />
-                        </div>
-                    </div>
-
-                    <div class="footer">
-                        Generated by <a href="https://github.com/psifertex/bnwrap" target="_blank">Binary Ninja Wrapped</a> | {self.user_name}'s Analysis Stats
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
+            # Render template
+            html = template_loader.render_export_html(
+                css=css,
+                date=current_date,
+                overall_quote=self.getJokeForStats(),
+                binary_count=self.count,
+                formats_quote=self.getJokeForFileFormats(),
+                file_formats_html=file_formats_html,
+                archs_quote=self.getJokeForArchitectures(),
+                cpu_archs_html=cpu_archs_html,
+                binary_stats_quote=self.getJokeForBinaryStats(),
+                binary_stats_html=binary_stats_html,
+                biggest_binary_html=biggest_binary_html,
+                static_quote=self.getQuoteForStaticBinaries(),
+                static_count=self.static_binaries_count["static"],
+                dynamic_count=self.static_binaries_count["dynamic"],
+                user_name=self.user_name
+            )
 
             # Write the HTML file
             try:
@@ -2014,202 +1657,23 @@ class BNWrappedWidget(QtWidgets.QWidget):
 
     def getJokeForStats(self):
         """Get a quote about overall statistics"""
-        quotes = [
-            f"You've analyzed {self.count} binaries. That's more than most people analyze in a lifetime!",
-            f"Your Binary Ninja has munched through {self.count} files. It's basically a digital gourmand.",
-            f"If each binary was a step, you'd have walked {self.count} steps into the land of reverse engineering.",
-            f"Your binaries collectively take up {sum(self.binary_stats.values())/3:.2f} KB. That's like... a small picture of a cat.",
-            f"Hey {self.user_name}, if reverse engineering were an Olympic sport, you'd be a contender with those {self.count} binaries!",
-            f"Binary analysis level: {self.count}. Keep going {self.user_name}, you're doing great!",
-            f"Your reverse engineering journey has taken you through {self.count} binaries. That's dedication!",
-            f"Over {self.count} binaries analyzed - the machines are starting to worry about your skills.",
-            f"With {self.count} files analyzed, you're officially a binary connoisseur.",
-            f"Looking at {self.count} binaries? That's not just a hobby, that's a lifestyle choice.",
-            f"The count is {self.count} binaries and rising! Your curiosity knows no bounds.",
-            f"{self.user_name}, your binary collection of {self.count} files is impressive. Some people collect stamps, you collect binaries.",
-        ]
-        return random.choice(quotes)
+        return quotes.get_stats_quote(self.count, self.user_name, self.binary_stats)
         
     def getJokeForFileFormats(self):
         """Get a quote about file format variety"""
-        num_formats = len(self.file_formats)
-        
-        if num_formats == 0:
-            return "No file formats detected? Do you even lift (binaries), bro?"
-        elif num_formats == 1:
-            format_name = next(iter(self.file_formats.keys()))
-            quotes = [
-                f"Just {format_name}? I see you're a person of focus, commitment, and sheer will.",
-                f"100% {format_name} - that's what we call specialization in the binary world!",
-                f"A {format_name} purist! There's something to be said for consistency.",
-                f"When it comes to file formats, you've found your one true love: {format_name}.",
-                f"You and {format_name} files - name a more iconic duo. I'll wait."
-            ]
-            return random.choice(quotes)
-        elif num_formats == 2:
-            formats = list(self.file_formats.keys())
-            quotes = [
-                "Two file formats - it's a binary situation in your binary analysis!",
-                f"The {formats[0]} vs {formats[1]} battle continues...",
-                "Two file formats walk into a bar... sounds like your typical workday.",
-                f"Balancing between {formats[0]} and {formats[1]} like a digital tightrope walker.",
-                "Your collection is like a tale of two formats - a binary binary."
-            ]
-            return random.choice(quotes)
-        elif num_formats >= 3:
-            # Get the top format
-            top_format = sorted(self.file_formats.items(), key=operator.itemgetter(1), reverse=True)[0][0]
-            quotes = [
-                f"Variety is the spice of life! With {num_formats} different file formats, your binaries are having a format party.",
-                f"Your file format diversity ({num_formats} types!) would make a biologist proud.",
-                f"You've got {num_formats} different file formats - you're basically the UN of binary formats.",
-                f"A particular fan of {top_format}, but with a healthy appreciation for {num_formats-1} other formats too.",
-                f"Your binaries speak {num_formats} different dialects. You're a digital polyglot!",
-                f"From {top_format} to {list(self.file_formats.keys())[-1]}, your format collection spans the binary alphabet."
-            ]
-            return random.choice(quotes)
-        else:
-            return "Your file formats are as diverse as a box of artisanal chocolates!"
+        return quotes.get_file_formats_quote(self.file_formats)
 
     def getJokeForArchitectures(self):
         """Get a quote about CPU architecture variety"""
-        num_archs = len(self.cpu_archs)
-        
-        if num_archs == 0:
-            return "No architectures detected? Binary Ninja is more than just a hex-editor, you know."
-        elif num_archs == 1:
-            arch_name = next(iter(self.cpu_archs.keys()))
-            quotes = [
-                f"100% loyal to {arch_name}! When you find something you like, you stick with it.",
-                f"A pure {arch_name} diet! The CPU architecture equivalent of a foodie with a favorite restaurant.",
-                f"{arch_name} and you - a match made in silicon heaven.",
-                f"The {arch_name} architecture fan club has exactly one member, and it's you!",
-                f"All {arch_name}, all the time. Consistency is the hallmark of expertise.",
-                f"You've got a special relationship with {arch_name}. It's not just an architecture, it's a lifestyle."
-            ]
-            return random.choice(quotes)
-        elif num_archs == 2:
-            archs = list(self.cpu_archs.keys())
-            quotes = [
-                "Two architectures - keeping one foot in each world. Perfectly balanced, as all things should be.",
-                f"Splitting your time between {archs[0]} and {archs[1]}. Don't let them catch you stepping out!",
-                f"{archs[0]} vs {archs[1]} - the eternal debate continues in your binary collection.",
-                "Your architecture graph looks like a digital mullet: business in the front, party in the back.",
-                f"A tale of two architectures: {archs[0]} and {archs[1]}. It was the best of code, it was the worst of code..."
-            ]
-            return random.choice(quotes)
-        elif num_archs >= 3:
-            # Get the top architecture
-            top_arch = sorted(self.cpu_archs.items(), key=operator.itemgetter(1), reverse=True)[0][0]
-            quotes = [
-                f"With {num_archs} different architectures, you're basically the United Nations of binary analysis!",
-                f"Your architecture diversity spans {num_archs} different instruction sets. Impressive!",
-                f"From {top_arch} to {list(self.cpu_archs.keys())[-1]}, your CPU tastes are remarkably varied.",
-                f"A {num_archs}-architecture polyglot! The Rosetta Stone of the binary world.",
-                f"Your favorite? {top_arch}. But you've clearly got a soft spot for {num_archs-1} others too.",
-                f"You've analyzed {num_archs} different architectures. That's like speaking {num_archs} different CPU languages!"
-            ]
-            return random.choice(quotes)
-        else:
-            return "I have no idea how you've managed this."
+        return quotes.get_architectures_quote(self.cpu_archs)
 
     def getJokeForBinaryStats(self):
         """Get a quote about binary statistics"""
-        if self.binary_stats['min'] == self.binary_stats['max']:
-            quotes = [
-                "All your binaries are exactly the same size? That's more suspicious than identical twins with the same outfit.",
-                "Same size binaries across the board. Either you're extremely consistent or something fishy is going on...",
-                "Your binaries have found size equilibrium - like a digital zen garden.",
-                f"Every binary is exactly {self.binary_stats['min']:.1f}KB. Coincidence? I think not!",
-                "The binary size inspector called: they want to know how you got them all exactly the same size."
-            ]
-            return random.choice(quotes)
-        
-        size_ratio = self.binary_stats['max'] / max(1, self.binary_stats['min'])
-        
-        if size_ratio > 100:
-            quotes = [
-                f"Your largest binary is {size_ratio:.1f}x bigger than your smallest. That's like comparing uhh, something huge to something tiny.",
-                f"From tiny {self.binary_stats['min']:.1f}KB to whopping {self.binary_stats['max']:.1f}KB - that's a {size_ratio:.1f}x range!",
-                f"Talk about size diversity! Your binaries range from microbe to whale ({size_ratio:.1f}x difference).",
-                f"The binary size spectrum in your collection spans {size_ratio:.1f}x from smallest to largest. Impressive range!",
-                f"Your binaries have serious size inequality issues - a {size_ratio:.1f}x gap between the haves and have-nots."
-            ]
-            return random.choice(quotes)
-        elif size_ratio > 10:
-            quotes = [
-                f"From {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB - you've got quite the range there!",
-                f"Your binary sizes span from {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB - that's versatility!",
-                f"A {size_ratio:.1f}x difference between your smallest and largest binary. Not extreme, but definitely noteworthy.",
-                f"Your average binary weighs in at {self.binary_stats['avg']:.1f}KB - right in the Goldilocks zone!",
-                f"Binary size range: {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB. A healthy ecosystem of code."
-            ]
-            return random.choice(quotes)
-        else:
-            quotes = [
-                "Your binaries are surprisingly consistent in size. Marie Kondo would be proud of your tidy code.",
-                f"With sizes ranging from {self.binary_stats['min']:.1f}KB to {self.binary_stats['max']:.1f}KB, your binaries are practically family.",
-                "Your binary size distribution is tighter than a rock band's rhythm section.",
-                f"Binary sizes all within a {size_ratio:.1f}x range - not much for variety, are you?",
-                "Your binaries are like a well-designed set of nesting dolls - consistently proportioned.",
-                f"Average size: {self.binary_stats['avg']:.1f}KB. Remarkably consistent across the board!"
-            ]
-            return random.choice(quotes)
+        return quotes.get_binary_stats_quote(self.binary_stats)
 
     def getQuoteForStaticBinaries(self):
         """Get a quote about static vs dynamic binaries"""
-        static_count = self.static_binaries_count['static']
-        dynamic_count = self.static_binaries_count['dynamic']
-        total = static_count + dynamic_count
-        
-        if total == 0:
-            quotes = [
-                "No binaries analyzed yet? The static vs dynamic debate awaits you!",
-                "Static or dynamic, that is the question... that you haven't answered yet.",
-                "The static/dynamic scoreboard is empty. Time to start analyzing!"
-            ]
-            return random.choice(quotes)
-        
-        static_percentage = (static_count / total * 100) if total > 0 else 0
-        
-        if static_percentage > 80:
-            quotes = [
-                "You're a static linking enthusiast! Your binaries are self-contained universes.",
-                f"Static linking at {static_percentage:.1f}%! You really don't trust those system libraries, do you?",
-                "Your binaries are like preppers - they've got everything they need packed inside.",
-                f"With {static_count} static binaries, you're firmly in the 'package everything' camp.",
-                "Static binaries dominate your collection. No dependency drama for you!",
-                f"You're all about that static life: {static_percentage:.1f}% of your binaries are fully self-contained."
-            ]
-            return random.choice(quotes)
-        elif static_percentage > 50:
-            quotes = [
-                "You prefer independence - most of your binaries are statically linked.",
-                f"Slightly favoring static binaries ({static_percentage:.1f}%) - a cautious approach to dependencies.",
-                f"Static wins over dynamic by {static_count} to {dynamic_count}. A narrow victory for self-sufficiency!",
-                "Your binaries lean toward self-reliance, but you're not completely against sharing libraries.",
-                f"With {static_percentage:.1f}% static binaries, you're mostly avoiding DLL hell."
-            ]
-            return random.choice(quotes)
-        elif static_percentage > 20:
-            quotes = [
-                "A few static but mostly dynamic, I see.",
-                f"Balanced approach: {static_count} static and {dynamic_count} dynamic binaries.",
-                "Your static/dynamic distribution shows you appreciate both independence and efficiency.",
-                f"With {static_percentage:.1f}% static binaries, you've found the middle path between isolation and integration.",
-                "Some static, some dynamic - your binaries reflect a pragmatic approach to dependencies."
-            ]
-            return random.choice(quotes)
-        else:
-            quotes = [
-                "You're all about those dynamic dependencies. Sharing is caring!",
-                f"Dynamic linking enthusiast! {dynamic_count} of your {total} binaries share libraries.",
-                "Your binaries are social creatures - they love sharing system libraries!",
-                f"Only {static_percentage:.1f}% static binaries? You must really trust your runtime environment.",
-                "Minimalist binaries are your style - why package what you can dynamically link?",
-                f"With {dynamic_count} dynamic binaries, you're optimizing for size and update flexibility."
-            ]
-            return random.choice(quotes)
+        return quotes.get_static_binaries_quote(self.static_binaries_count)
     
     def getQuote(self):
         """Get a random quote from all categories"""
@@ -2221,81 +1685,6 @@ class BNWrappedWidget(QtWidgets.QWidget):
             self.getQuoteForStaticBinaries(),
         ]
         return random.choice(quotes)
-
-class DebugTimerWidget(QtWidgets.QWidget):
-    """A status bar widget that displays and counts up the time spent debugging."""
-    
-    def __init__(self, parent=None):
-        super(DebugTimerWidget, self).__init__(parent)
-        self.total_seconds = 0
-        self.running = True  # Start the timer by default
-        
-        # Create the label with the initial text
-        self.label = QtWidgets.QLabel("Time Wasted Debugging: 00:00:00:00", self)
-        self.label.setToolTip("Days:Hours:Minutes:Seconds")
-        
-        # Set up layout
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self.label)
-        self.setLayout(layout)
-        
-        # Create a timer to update every 100ms (1/10th of a second)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_time)
-        self.timer.start(100)  # Update every 100ms
-        
-        # Make sure the widget doesn't take up too much space but move it left more
-        self.setMaximumWidth(300)
-    
-    def update_time(self):
-        """Update the timer display."""
-        if self.running:
-            self.total_seconds += 0.1  # 100ms = 0.1s
-            
-        # Calculate days, hours, minutes, seconds
-        total_seconds = int(self.total_seconds)
-        
-        days = total_seconds // 86400
-        hours = (total_seconds % 86400) // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
-        
-        # Format time string with days:hours:minutes:seconds
-        time_str = f"Time Wasted Debugging: {days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
-        self.label.setText(time_str)
-    
-    def toggle_timer(self):
-        """Toggle the timer between running and paused states."""
-        self.running = not self.running
-        return self.running
-    
-    def reset_timer(self):
-        """Reset the timer to zero."""
-        self.total_seconds = 0
-        self.update_time()
-    
-    def mouseReleaseEvent(self, event):
-        """Handle mouse click events to toggle the timer."""
-        super().mouseReleaseEvent(event)
-        if event.button() == QtCore.Qt.MouseButton.RightButton:
-            # Show context menu on right click
-            self.show_context_menu(event.pos())
-        
-    def show_context_menu(self, pos):
-        """Show a context menu with timer options."""
-        menu = QtWidgets.QMenu(self)
-        
-        # Add timer control actions
-        toggle_action = menu.addAction("Start Timer" if not self.running else "Pause Timer")
-        toggle_action.triggered.connect(self.toggle_timer)
-        
-        reset_action = menu.addAction("Reset Timer")
-        reset_action.triggered.connect(self.reset_timer)
-        
-        # Execute the menu
-        menu.exec_(self.mapToGlobal(pos))
 
 
 def launchBNWrapped(context):
@@ -2396,11 +1785,17 @@ def createSplashImage():
     
     return pixmap
 
-from binaryninjaui import UIAction, UIActionHandler, Menu
+# Only register UI actions if not in testing mode
+if not os.environ.get('BNWRAP_TESTING'):
+    try:
+        from binaryninjaui import UIAction, UIActionHandler, Menu
 
-# Register the UIAction
-UIAction.registerAction("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files")
-UIActionHandler.globalActions().bindAction("Binja Wrapped", UIAction(launchBNWrapped))
+        # Register the UIAction
+        UIAction.registerAction("Binja Wrapped", "Generate a Spotify-wrapped style summary of recent files")
+        UIActionHandler.globalActions().bindAction("Binja Wrapped", UIAction(launchBNWrapped))
 
-# Add to the Plugin Menu
-Menu.mainMenu("Plugins").addAction("Binja Wrapped", "Plugins")
+        # Add to the Plugin Menu
+        Menu.mainMenu("Plugins").addAction("Binja Wrapped", "Plugins")
+    except ImportError:
+        # Running in headless mode or tests
+        pass
