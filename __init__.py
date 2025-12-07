@@ -1,27 +1,19 @@
 import os
-import io
-import json
 import random
 import operator
 import datetime
-import getpass
-import platform
 import tempfile
 import urllib.parse
-import hashlib
-from binaryninja import load, SymbolType, user_directory, Settings, core_ui_enabled
-from binaryninja.log import LogLevel
+from binaryninja import Settings, core_ui_enabled
 
 from .log import logger
 from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import QResource, QTimer
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 
-from .utils import get_user_name, get_file_hash, calculate_brightness_hex, calculate_brightness_rgb, get_contrasting_text_color
-from .uiutils import fit_text_to_rect, figure_to_pixmap
+from .utils import get_user_name, calculate_brightness_rgb, get_contrasting_text_color
+from .uiutils import fit_text_to_rect, figure_to_pixmap, create_splash_image
 from .file_analyzer import FileAnalyzer
-from .debug_timer import DebugTimerWidget, init_debug_timer
+from .debug_timer import init_debug_timer
 from . import quotes
 from . import template_loader
 
@@ -1603,7 +1595,7 @@ def launchBNWrapped(context):
     recent_files = QtCore.QSettings().value("ui/recentFiles", [], type=list)
     
     # Create a splash screen while loading
-    splash_pixmap = createSplashImage()
+    splash_pixmap = create_splash_image()
     splash = QtWidgets.QSplashScreen(splash_pixmap)
     splash.setStyleSheet("""
         font-size: 18px;
@@ -1624,72 +1616,6 @@ def launchBNWrapped(context):
     
     # Enforce a minimum splash screen display time of 3 seconds
     # This will be handled in the BNWrappedWidget's initialization
-    
-def createSplashImage():
-    """Create a stylish splash screen image with the Binary Ninja wordmark logo"""
-    # Create a pixmap for the splash screen - make it larger
-    pixmap = QtGui.QPixmap(700, 400)
-    pixmap.fill(QtGui.QColor("#191414"))  # Dark background
-    
-    # Create a painter to draw on the pixmap
-    painter = QtGui.QPainter(pixmap)
-
-    color_options = [
-        QtGui.QColor("#1DB954"),  # Spotify green
-        QtGui.QColor("#FF9CE0"),  # Pink
-        QtGui.QColor("#2E77D0"),  # Blue
-        QtGui.QColor("#FF7900"),  # Orange
-        QtGui.QColor("#FFFF64"),  # Yellow
-        QtGui.QColor("#B49BC8"),  # Purple
-        QtGui.QColor("#FFB9B9"),  # Salmon
-        QtGui.QColor("#30A2FF"),  # Light blue
-        QtGui.QColor("#E13300"),  # Bright red
-        QtGui.QColor("#00C5CD"),  # Turquoise
-        QtGui.QColor("#ADFF2F"),  # Green yellow
-        QtGui.QColor("#FF6EB4"),  # Hot pink
-    ]
-    
-    # Randomly select 5 colors
-    random.shuffle(color_options)
-    colors = color_options[:5]
-    
-    box_size = 80
-    box_margin = 25  # Increased margin for better spacing
-    box_start_x = (pixmap.width() - (box_size * 3 + box_margin * 2)) // 2
-    box_start_y = 60  # Move boxes down to avoid overlap with wordmark
-    
-    for i in range(5):
-        row = i // 3
-        col = i % 3
-        x = box_start_x + col * (box_size + box_margin)
-        y = box_start_y + row * (box_size + box_margin)
-        
-        # Create a gradient for each box
-        gradient = QtGui.QLinearGradient(x, y, x + box_size, y + box_size)
-        gradient.setColorAt(0, colors[i])
-        gradient.setColorAt(1, colors[i].darker(120))
-        
-        painter.setBrush(QtGui.QBrush(gradient))
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(x, y, box_size, box_size, 10, 10)
-    
-    # Add the Binary Ninja wordmark logo
-    # For dark background, use the dark wordmark as requested
-    wordmark = QtGui.QPixmap(":/icons/images/logo-wordmark-dark.png")
-    if not wordmark.isNull():
-        # Scale the wordmark to fit nicely 
-        wordmark_width = 350  # Target width in pixels, increased for better visibility
-        wordmark = wordmark.scaledToWidth(wordmark_width, QtCore.Qt.TransformationMode.SmoothTransformation)
-        
-        # Position the wordmark at the top, centered horizontally
-        wordmark_x = (pixmap.width() - wordmark.width()) // 2
-        wordmark_y = 280  # Position below the boxes to avoid overlap
-        painter.drawPixmap(wordmark_x, wordmark_y, wordmark)
-    
-    # Finish painting
-    painter.end()
-    
-    return pixmap
 
 # Only register UI actions if not in testing mode
 if not os.environ.get('BNWRAP_TESTING'):
