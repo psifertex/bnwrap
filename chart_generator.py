@@ -249,9 +249,9 @@ class ChartGenerator:
         Returns:
             QPixmap of the generated chart
         """
-        stats = stats_dict.copy()
-        # Sort by value in descending order
-        sorted_stats = dict(sorted(stats.items(), key=operator.itemgetter(1), reverse=True))
+        # Use fixed order: max, avg, min, projects
+        desired_order = ['max', 'avg', 'min', 'projects']
+        sorted_stats = {key: stats_dict[key] for key in desired_order if key in stats_dict}
 
         background_color = self.background_colors[tab_index]
         fig, ax = plt.subplots(figsize=(6, 6), facecolor=background_color)
